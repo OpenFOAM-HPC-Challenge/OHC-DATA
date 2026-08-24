@@ -42,10 +42,17 @@ DERIVED = "derived"
 # and OHCParser.get_cells().
 MESH_CELLS = {"coarse": 65000000, "medium": 110000000, "fine": 236000000}
 
-# The challenge case runs a fixed number of SIMPLE iterations; a submission
-# that implies a wildly different count is usually a unit slip in either the
-# wall-clock time or the time per iteration.
+# The challenge case is scored over a fixed number of SIMPLE iterations, and
+# the *-To-Solution columns are normalised to it: they answer "what would this
+# machine need for the standard case", not "what did this particular run take".
+# That is why they are built from the time per iteration rather than from the
+# measured wall clock, which covers however many iterations the run happened to
+# do (2041 to 16000 across the published data).
 NOMINAL_ITERATIONS = 4000
+
+# What the OHC1/OHC2 spreadsheets put in Run Consumed Energy when the run was
+# not metered.  A true zero would fall off the log axes the notebook plots on.
+UNREPORTED_ENERGY = 1e-32
 
 # Spellings that mean "not reported" in the contributed spreadsheets.
 NULL_TOKENS = {"", "n/a", "na", "none", "null", "-", "/", "nan", "?"}
@@ -134,9 +141,13 @@ FIELDS = [
     Field("Pre-Processing Wall-Clock Time [s]", "number", OPTIONAL,
           minimum=0, unit="s",
           doc="decomposePar + renumberMesh + potentialFoam + applyBoundaryLayer."),
-    Field("Run Consumed Energy [kWh]", "float", REQUIRED, minimum=0,
-          unit="kWh",
-          doc="Measured when Is Energy Reported is 1, else TDP x wall-clock."),
+    Field("Run Consumed Energy [kWh]", "float", OPTIONAL, minimum=0,
+          unit="kWh", default=UNREPORTED_ENERGY,
+          doc="What the run actually drew, when it was metered. Required if "
+              "Is Energy Reported is 1; leave it out otherwise. It is reported "
+              "for the record and does not feed the energy columns below, "
+              "which are normalised from the TDP so that entries stay "
+              "comparable."),
     Field("Is Energy Reported", "flag", REQUIRED,
           doc="1 when the energy was measured, 0 when derived from the TDP."),
     Field("Is Partial", "flag", REQUIRED,
@@ -144,27 +155,29 @@ FIELDS = [
 
     # -- derived ---------------------------------------------------------- #
     Field("Total Core Time [s]", "float", DERIVED, unit="s",
-          doc="wall-clock x cores"),
+          doc="What the run cost: wall-clock x cores."),
     Field("Total Node Time [s]", "float", DERIVED, unit="s",
-          doc="wall-clock x nodes"),
+          doc="What the run cost: wall-clock x nodes."),
     Field("Time-To-Solution [h]", "float", DERIVED, unit="h",
-          doc="wall-clock / 3600"),
+          doc="4000 x time per iteration / 3600, i.e. the standard case at "
+              "this machine's pace -- not the measured wall clock."),
     Field("Core-Time-To-Solution [h]", "float", DERIVED, unit="h",
-          doc="wall-clock x cores / 3600"),
+          doc="Time-To-Solution x cores"),
     Field("Node-Time-To-Solution [h]", "float", DERIVED, unit="h",
-          doc="wall-clock x nodes / 3600"),
+          doc="Time-To-Solution x nodes"),
     Field("Energy-To-Solution [kWh]", "float", DERIVED, unit="kWh",
-          doc="Run Consumed Energy, under the column name the notebook uses."),
+          doc="TDP x Time-To-Solution / 1000. Modelled from the TDP, not taken "
+              "from Run Consumed Energy, so that metered and unmetered "
+              "entries stay comparable."),
     Field("Energy per Iteration [J]", "float", DERIVED, unit="J",
-          doc="energy x 3.6e6 / iterations, iterations = wall-clock / time "
-              "per iteration."),
+          doc="TDP x time per iteration"),
     Field("Energy per Iteration [kJ]", "float", DERIVED, unit="kJ",
-          doc="Energy per Iteration [J] / 1000"),
+          doc="TDP x time per iteration / 1000"),
     Field("FVOPS", "float", DERIVED,
           doc="Finite VOlume Operations Per Second: cells / time per iteration."),
     Field("FVOPS per Node", "float", DERIVED, doc="FVOPS / nodes"),
     Field("FVOPS per Energy", "float", DERIVED,
-          doc="FVOPS / Energy per Iteration [J]"),
+          doc="FVOPS / (TDP x time per iteration)"),
     Field("FVOPS per Energy per Iteration", "float", DERIVED,
           doc="Same quantity as FVOPS per Energy; both column names exist in "
               "the published data, so both are written."),
@@ -480,6 +493,49 @@ def load_submission(path):
 # Validation
 # --------------------------------------------------------------------------- #
 
+def backfill(raw, where):
+    """Fill in raw fields another column already implies.  Warns, never errors.
+
+    One rule so far.  A handful of published runs recorded no wall clock -- the
+    spreadsheet carries a zero in its place -- while Time-To-Solution survived,
+    because that column is built from the time per iteration and never touched
+    the wall clock.  Reading it back gives the length of a full
+    NOMINAL_ITERATIONS run at the pace this one managed.
+
+    For a partial run that is *longer* than the run actually lasted, which is
+    why it is worth a warning: the two cost columns derived from it, Total Core
+    and Total Node Time, then describe the standard case rather than what was
+    really spent.  Those two are dropped here when they are zero, since they
+    are zero for exactly the same reason and are recomputed further down.
+    """
+    issues = []
+    record = dict(raw)
+
+    wct = coerce_number(record.get("Run Wall-Clock Time [s]"))
+    tts = coerce_number(record.get("Time-To-Solution [h]"))
+    if (wct is None or wct <= 0) and tts and tts > 0:
+        # Time-To-Solution is published rounded, so the multiplication brings
+        # back a tail of float noise; a wall clock is not meaningful below
+        # milliseconds anyway.
+        recovered = round(tts * 3600.0, 3)
+        record["Run Wall-Clock Time [s]"] = recovered
+        dropped = [name for name in ("Total Core Time [s]", "Total Node Time [s]")
+                   if (coerce_number(record.get(name)) or 0) <= 0
+                   and name in record]
+        for name in dropped:
+            del record[name]
+        issues.append(warning(
+            "%s 'Run Wall-Clock Time [s]'" % where,
+            "is %s, so it was taken from Time-To-Solution instead: %s s, the "
+            "length of a %d-iteration run at the reported time per iteration. "
+            "A partial run did not last that long%s"
+            % ("missing" if wct is None else _fmt(wct),
+               _fmt(recovered), NOMINAL_ITERATIONS,
+               ", and %s were recomputed from it" % " and ".join(dropped)
+               if dropped else "")))
+    return record, issues
+
+
 def validate_record(raw, where, known=None):
     """Check one raw record.  Returns (normalised record, issues).
 
@@ -487,8 +543,8 @@ def validate_record(raw, where, known=None):
     as submitted, absent optionals as their canonical placeholder, and derived
     values either as submitted or recomputed.
     """
-    issues = []
     known = known or {}
+    raw, issues = backfill(raw, where)
     record = {}
 
     unknown = [k for k in raw if k not in BY_NAME]
@@ -568,33 +624,42 @@ def cross_check(record, where):
     wct = coerce_number(get("Run Wall-Clock Time [s]"))
     tpi = coerce_number(get("Time per Iteration [s]"))
     if wct and tpi and tpi > 0:
+        # Not a check that the run did NOMINAL_ITERATIONS -- the published data
+        # spans 2041 to 16000, which is exactly why the scored columns are
+        # normalised.  This only catches the two timings being in different
+        # units, which puts the count orders of magnitude out.
         iterations = wct / tpi
-        off = abs(iterations - NOMINAL_ITERATIONS) / float(NOMINAL_ITERATIONS)
-        if off > 0.05 and not get("Is Partial"):
+        if not 100 <= iterations <= 100000:
             issues.append(warning("%s 'Run Wall-Clock Time [s]'" % where,
-                                  "wall-clock / time-per-iteration is %.0f "
-                                  "iterations, not the %d the case runs -- set "
-                                  "Is Partial to 1 if the run was cut short, "
-                                  "otherwise check the units"
-                                  % (iterations, NOMINAL_ITERATIONS)))
+                                  "divided by the time per iteration gives "
+                                  "%.0f iterations, which is hard to believe "
+                                  "-- are both in seconds?" % iterations))
         if tpi > wct:
             issues.append(error("%s 'Time per Iteration [s]'" % where,
                                 "is longer than the whole run"))
 
+    # Run Consumed Energy is a measurement, not an input to any of the derived
+    # energy columns -- those come from the TDP.  So the only thing to check is
+    # that it agrees with the flag that says whether it was measured at all.
     energy = coerce_number(get("Run Consumed Energy [kWh]"))
     tdp = coerce_number(get("System TDP [W]"))
-    if energy is not None and tdp and wct:
+    metered = energy is not None and energy > 1e-9
+    if get("Is Energy Reported") == 1 and not metered:
+        issues.append(error("%s 'Run Consumed Energy [kWh]'" % where,
+                            "is required when Is Energy Reported is 1"))
+    elif get("Is Energy Reported") == 0 and metered:
+        issues.append(warning("%s 'Is Energy Reported'" % where,
+                              "is 0, but an energy of %s kWh is given -- set "
+                              "the flag to 1 if the run really was metered"
+                              % _fmt(energy)))
+    if metered and tdp and wct:
+        # The band is wide on purpose: the published measurements run from
+        # 0.58x to 2.42x of the TDP envelope, so only a unit slip stands out.
         modelled = tdp * wct / 3.6e6
-        if get("Is Energy Reported") == 0 and _relative(energy, modelled) > 0.01:
+        if modelled > 0 and not 0.05 <= energy / modelled <= 3.0:
             issues.append(warning("%s 'Run Consumed Energy [kWh]'" % where,
-                                  "is flagged as TDP-derived but %s != TDP x "
-                                  "wall-clock (%s kWh)"
-                                  % (_fmt(energy), _fmt(round(modelled, 6)))))
-        elif energy > 0 and modelled > 0 and (energy / modelled > 1.5
-                                              or energy / modelled < 0.2):
-            issues.append(warning("%s 'Run Consumed Energy [kWh]'" % where,
-                                  "is %.1fx the TDP x wall-clock envelope (%s "
-                                  "kWh) -- check the unit"
+                                  "is %.2gx TDP x wall-clock (%s kWh) -- check "
+                                  "the unit"
                                   % (energy / modelled, _fmt(round(modelled, 6)))))
 
     pre = coerce_number(get("Pre-Processing Wall-Clock Time [s]"))
@@ -611,10 +676,23 @@ def cross_check(record, where):
 def derived_values(record):
     """Compute every DERIVED field from the raw ones, skipping the impossible.
 
+    Two different quantities live in here, and the difference is the whole
+    point of the columns:
+
+    * ``Total Core/Node Time`` is what the run *cost*: the measured wall clock
+      times the hardware it occupied.
+    * the ``*-To-Solution`` and energy columns are what the machine *would*
+      need for the standard case: NOMINAL_ITERATIONS iterations at the
+      measured time per iteration, drawing the system TDP throughout.  They
+      deliberately ignore the wall clock -- runs stop at different iteration
+      counts -- and the metered ``Run Consumed Energy``, which not every site
+      reports, so that every entry is comparable with every other.
+
     FVOPS -- Finite VOlume Operations Per Second -- is cells advanced per
-    second of wall clock, after Galeazzo et al., IOP Conf. Ser.: Mater. Sci.
-    Eng. 1312, 012009 (2024).  The energy-per-iteration family assumes the
-    energy was accumulated over `wall clock / time per iteration` iterations.
+    second, after Galeazzo et al., IOP Conf. Ser.: Mater. Sci. Eng. 1312,
+    012009 (2024).
+
+    Every formula here reproduces all 385 published records exactly.
     """
     number = coerce_number
     wct = number(record.get("Run Wall-Clock Time [s]"))
@@ -623,26 +701,26 @@ def derived_values(record):
     cores = number(record.get("Number of CPU Cores"))
     nodes = number(record.get("Number of Nodes"))
     tdp = number(record.get("System TDP [W]"))
-    energy = number(record.get("Run Consumed Energy [kWh]"))
 
     values = {}
     if wct is not None and cores:
         values["Total Core Time [s]"] = wct * cores
-        values["Core-Time-To-Solution [h]"] = wct * cores / 3600.0
     if wct is not None and nodes:
         values["Total Node Time [s]"] = wct * nodes
-        values["Node-Time-To-Solution [h]"] = wct * nodes / 3600.0
-    if wct is not None:
-        values["Time-To-Solution [h]"] = wct / 3600.0
-    if energy is not None:
-        values["Energy-To-Solution [kWh]"] = energy
 
-    iterations = wct / tpi if (wct and tpi) else None
-    energy_per_iteration = None
-    if energy is not None and iterations:
-        energy_per_iteration = energy * 3.6e6 / iterations
-        values["Energy per Iteration [J]"] = energy_per_iteration
-        values["Energy per Iteration [kJ]"] = energy_per_iteration / 1000.0
+    # The normalised family: one standard case at this machine's pace.
+    if tpi:
+        tts = NOMINAL_ITERATIONS * tpi / 3600.0
+        values["Time-To-Solution [h]"] = tts
+        if cores:
+            values["Core-Time-To-Solution [h]"] = tts * cores
+        if nodes:
+            values["Node-Time-To-Solution [h]"] = tts * nodes
+        if tdp:
+            energy_per_iteration = tdp * tpi
+            values["Energy-To-Solution [kWh]"] = tdp * tts / 1000.0
+            values["Energy per Iteration [J]"] = energy_per_iteration
+            values["Energy per Iteration [kJ]"] = energy_per_iteration / 1000.0
 
     fvops = cells / tpi if (cells and tpi) else None
     if fvops is not None:
@@ -651,14 +729,8 @@ def derived_values(record):
             values["FVOPS per Node"] = fvops / nodes
         if tdp:
             values["FVOPS per kW"] = fvops / (tdp / 1000.0)
-        # A submitted Energy per Iteration wins over the recomputed one, so
-        # that FVOPS per Energy stays consistent with the value next to it.
-        per_iteration = number(record.get("Energy per Iteration [J]"))
-        if per_iteration is None:
-            per_iteration = energy_per_iteration
-        if per_iteration:
-            values["FVOPS per Energy"] = fvops / per_iteration
-            values["FVOPS per Energy per Iteration"] = fvops / per_iteration
+            values["FVOPS per Energy"] = fvops / (tdp * tpi)
+            values["FVOPS per Energy per Iteration"] = fvops / (tdp * tpi)
     return values
 
 
@@ -779,8 +851,11 @@ def append_records(path, records):
     The existing bytes are never rewritten: the closing bracket is replaced by
     the new rows plus a fresh bracket, so `git diff` shows additions only.
     """
-    with open(path) as handle:
-        text = handle.read()
+    try:
+        with open(path) as handle:
+            text = handle.read()
+    except IOError:
+        text = "[\n]"                    # first submission into a fresh dataset
 
     stripped = text.rstrip()
     if not stripped.endswith("]"):

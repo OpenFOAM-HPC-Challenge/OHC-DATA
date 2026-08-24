@@ -9,10 +9,13 @@ commits the result.  You never edit `data/data.json` yourself.
 The file name is yours to choose -- anything descriptive that no other
 submission already uses, e.g. `drivaer_coarse_scaling.json`.  Nothing is read
 out of it: your participant number comes from `Contributor ID` inside the
-file.  Put it directly in this directory, though; only files here are
-appended.  `example/99_OHC_DrivAer_coarse.json` is a complete, valid
-submission to copy, and lives one level down precisely so that it is
-validated but never appended.
+file.  Put it anywhere under this directory: a folder of your own, like
+`OHC-Comitee/OHC1.json`, is picked up just as well as a file sitting here.
+
+The one exception is `example/`, which holds a complete, valid submission to
+copy.  Everything in there is treated as a sample rather than a submission --
+never validated as one, never plotted, never appended -- so that no example
+data can reach the dataset.
 
 ## Producing the file
 
@@ -28,6 +31,22 @@ It writes `<workspace>/submissions/<date>_<suffix>/<id>_OHC1_DrivAer_<mesh>.json
 copy that file here.  Fields the OpenFOAM logs cannot know (your affiliation,
 the CPU model, the node TDP) come from `submissionMeta.yaml`, which the same
 command writes as a template on its first run.
+
+## The preview plot
+
+The pull request also gets a scatter of time-to-solution against
+energy-to-solution -- the `TTS_ETS` view of the challenge notebooks -- with
+everything already published in grey and your runs in red, restricted to the
+meshes you submitted.  Lower left is better; the dashed line is the Pareto
+front of the published field, so you can see whether your machine extends it.
+
+Draw it yourself with:
+
+```sh
+./scripts/plot_submission.py submissions/<your file>.json --output preview.svg --png
+```
+
+The SVG needs nothing installed; the PNG needs `rsvg-convert` (`librsvg2-bin`).
 
 ## Checking it yourself
 
@@ -77,7 +96,6 @@ all of them.  A record may override anything `meta` sets:
       "Run Wall-Clock Time [s]": 71600.0,
       "Time per Iteration [s]": 17.9,
       "System TDP [W]": 700.0,
-      "Run Consumed Energy [kWh]": 13.922222,
       "Is Energy Reported": 0,
       "Is Partial": 0
     }
@@ -96,11 +114,21 @@ Beyond the per-field types and ranges in the table below:
   236M fine).
 - Cores are counted across the whole allocation, so they cannot be fewer than
   the nodes, and should divide evenly over them.
-- `Run Wall-Clock Time [s]` divided by `Time per Iteration [s]` should come out
-  near the 4000 iterations the case runs -- unless `Is Partial` is 1.
+- `Run Wall-Clock Time [s]` divided by `Time per Iteration [s]` has to land
+  somewhere believable (100 to 100,000 iterations).  It does *not* have to come
+  out at 4000: runs stop at different iteration counts, which is exactly why
+  the scored columns are normalised.  This only catches the two timings being
+  in different units.
 - A run with GPUs has to name the `GPU Model`.
-- The energy has to sit inside the envelope its TDP and runtime allow, and has
-  to equal TDP x wall-clock exactly when `Is Energy Reported` is 0.
+- `Run Wall-Clock Time [s]` may be left out if `Time-To-Solution [h]` is there:
+  it is read back as `Time-To-Solution x 3600` and a warning says so.  That is
+  the length of a full 4000-iteration run at your reported pace, so for a
+  partial run it is longer than the run actually lasted, and `Total Core Time`
+  and `Total Node Time` then describe the standard case rather than what you
+  really spent.
+- `Run Consumed Energy [kWh]` is required when `Is Energy Reported` is 1 and
+  should be left out otherwise, and a metered value has to sit within a wide
+  band around TDP x wall-clock (the published ones span 0.6x to 2.4x).
 - The record must not already exist in `data/data.json`, or twice in the same
   pull request.  Identity is round + contributor + track + optimization
   category + mesh + nodes + cores + GPU count + file name + the two timings.
@@ -109,6 +137,23 @@ Beyond the per-field types and ranges in the table below:
 - Free-form hardware strings are compared against the values the dataset
   already uses, and a new one is reported as a warning.
 
+## How the derived columns work
+
+Two different things live in the derived columns, and mixing them up is the
+easiest way to submit a wrong number:
+
+- `Total Core Time [s]` and `Total Node Time [s]` are what the run **cost** --
+  the measured wall clock times the hardware it occupied.
+- The `*-To-Solution` and energy columns are what the machine **would need for
+  the standard case**: 4000 iterations at your measured time per iteration,
+  drawing the system TDP throughout.  They ignore the wall clock, because runs
+  stop at different iteration counts, and they ignore `Run Consumed Energy`,
+  because not every site meters its runs.  That is what makes two entries
+  comparable.
+
+You can leave all of them out and let the append compute them.  Every formula
+reproduces all 385 published records exactly.
+
 ## Field reference
 
 Regenerate the table below in place with
@@ -116,7 +161,7 @@ Regenerate the table below in place with
 
 <!-- fields:start -->
 
-### Required (21)
+### Required (20)
 
 Every record must carry these.
 
@@ -140,11 +185,10 @@ Every record must carry these.
 | `System TDP [W]` | float | > 0 Thermal design power of the whole allocation, all nodes. |
 | `Run Wall-Clock Time [s]` | float | > 0 Solver only, excluding pre-processing. |
 | `Time per Iteration [s]` | float | > 0 |
-| `Run Consumed Energy [kWh]` | float | >= 0 Measured when Is Energy Reported is 1, else TDP x wall-clock. |
 | `Is Energy Reported` | flag | 1 when the energy was measured, 0 when derived from the TDP. |
 | `Is Partial` | flag | 1 when the run stopped before the requested end time. |
 
-### Optional (11)
+### Optional (12)
 
 May be omitted, `null`, `"N/A"`, `"-"` or `"/"`; the placeholder in the last column is stored instead.
 
@@ -161,6 +205,7 @@ May be omitted, `null`, `"N/A"`, `"-"` or `"/"`; the placeholder in the last col
 | `Network Interconnect` | str | stored as `"N/A"` when absent |
 | `Storage File-System` | str | stored as `"N/A"` when absent |
 | `Pre-Processing Wall-Clock Time [s]` | number | >= 0 decomposePar + renumberMesh + potentialFoam + applyBoundaryLayer. stored as `null` when absent |
+| `Run Consumed Energy [kWh]` | float | >= 0 What the run actually drew, when it was metered. Required if Is Energy Reported is 1; leave it out otherwise. It is reported for the record and does not feed the energy columns below, which are normalised from the TDP so that entries stay comparable. stored as `1e-32` when absent |
 
 ### Derived (13)
 
@@ -168,17 +213,17 @@ Computed on append when absent. A submitted value is kept as submitted and only 
 
 | Field | Type | Accepted values / notes |
 | --- | --- | --- |
-| `Total Core Time [s]` | float | wall-clock x cores |
-| `Total Node Time [s]` | float | wall-clock x nodes |
-| `Time-To-Solution [h]` | float | wall-clock / 3600 |
-| `Core-Time-To-Solution [h]` | float | wall-clock x cores / 3600 |
-| `Node-Time-To-Solution [h]` | float | wall-clock x nodes / 3600 |
-| `Energy-To-Solution [kWh]` | float | Run Consumed Energy, under the column name the notebook uses. |
-| `Energy per Iteration [J]` | float | energy x 3.6e6 / iterations, iterations = wall-clock / time per iteration. |
-| `Energy per Iteration [kJ]` | float | Energy per Iteration [J] / 1000 |
+| `Total Core Time [s]` | float | What the run cost: wall-clock x cores. |
+| `Total Node Time [s]` | float | What the run cost: wall-clock x nodes. |
+| `Time-To-Solution [h]` | float | 4000 x time per iteration / 3600, i.e. the standard case at this machine's pace -- not the measured wall clock. |
+| `Core-Time-To-Solution [h]` | float | Time-To-Solution x cores |
+| `Node-Time-To-Solution [h]` | float | Time-To-Solution x nodes |
+| `Energy-To-Solution [kWh]` | float | TDP x Time-To-Solution / 1000. Modelled from the TDP, not taken from Run Consumed Energy, so that metered and unmetered entries stay comparable. |
+| `Energy per Iteration [J]` | float | TDP x time per iteration |
+| `Energy per Iteration [kJ]` | float | TDP x time per iteration / 1000 |
 | `FVOPS` | float | Finite VOlume Operations Per Second: cells / time per iteration. |
 | `FVOPS per Node` | float | FVOPS / nodes |
-| `FVOPS per Energy` | float | FVOPS / Energy per Iteration [J] |
+| `FVOPS per Energy` | float | FVOPS / (TDP x time per iteration) |
 | `FVOPS per Energy per Iteration` | float | Same quantity as FVOPS per Energy; both column names exist in the published data, so both are written. |
 | `FVOPS per kW` | float | FVOPS / (TDP / 1000) |
 
