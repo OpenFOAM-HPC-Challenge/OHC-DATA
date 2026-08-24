@@ -1,0 +1,68 @@
+name: append-submissions
+
+# Once a submission is merged, its records are appended to the global
+# data/data.json and the result is committed back to the default branch.
+#
+# The append is idempotent: data/submissions.lock.json records the SHA-256 of
+# every file that has already been merged, so re-running this workflow (or
+# merging an unrelated change to submissions/) appends nothing twice.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'submissions/**.json'
+  workflow_dispatch:            # manual catch-up run
+
+permissions:
+  contents: write
+
+concurrency:
+  group: append-submissions     # never two appends racing for the same file
+  cancel-in-progress: false
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Append every submission the ledger has not seen
+        id: append
+        run: |
+          set -euo pipefail
+          python3 scripts/append_submissions.py --all --summary summary.md \
+            | tee append.log
+          echo "records=$(sed -n 's/^::appended:://p' append.log | tail -1)" \
+            >> "$GITHUB_OUTPUT"
+          if [ -f summary.md ]; then cat summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Commit the updated dataset
+        if: steps.append.outputs.records != ''
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/; then
+            echo "data/ is unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/data.json data/submissions.lock.json
+          git commit \
+            -m "data: append ${{ steps.append.outputs.records }} record(s) from submissions" \
+            -m "Appended by append-submissions.yml for ${{ github.sha }}."
+          # Another append may have landed while this one ran; rebase onto it
+          # rather than force the branch.  The retries live in an `if`, where
+          # `set -e` leaves a failing command to the loop instead of aborting.
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
+               && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            echo "push attempt ${attempt} failed, retrying"
+            sleep 5
+          done
+          exit 1
