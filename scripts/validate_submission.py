@@ -32,11 +32,12 @@ import ohc_schema as schema
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET = os.path.join(REPO, "data", "data.json")
-REFERENCE_DATA = [
-    os.path.join(REPO, "data", "data.json"),
-    os.path.join(REPO, "data", "data_OHC1.json"),
-    os.path.join(REPO, "data", "data_OHC2.json"),
-]
+# data/data.json is the single source of truth, so it is the only file
+# enum-learning and the self-check read.  The raw round archives
+# (data/data_OHC1.json) are kept for provenance but add nothing here: their
+# runs are already in data.json, normalised and stamped with OHC/Submission
+# Date, so data.json's known values are a superset of theirs.
+REFERENCE_DATA = [os.path.join(REPO, "data", "data.json")]
 
 
 def supplied_fields(ohc=None, submission_date=None):
@@ -279,10 +280,11 @@ def write_schema_doc(path, parser):
 def self_check(max_rejected=0, dataset_path=DATASET):
     """Validate the published dataset against the schema.
 
-    Only data/data.json is checked: it is the file the workflows append to and
-    the notebook reads, and the only one carrying every column.  The per-round
-    files are the *inputs* rebuild_dataset.py builds it from, and predate the
-    OHC and Submission Date columns, so they are counted but not validated.
+    Only data/data.json is checked: it is the single source of truth the
+    workflows append to and the notebook reads, and the file carrying every
+    column.  The raw round archives (data/data_OHC1.json) are kept for
+    provenance and are not part of this check -- their runs are already in
+    data.json, normalised.
 
     The historical spreadsheets are not perfectly self-consistent, so this
     reports rather than asserts -- but a schema change that suddenly rejects

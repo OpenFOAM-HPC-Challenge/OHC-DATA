@@ -57,6 +57,13 @@ MESH_CELLS = {"coarse": 65000000, "medium": 110000000, "fine": 236000000}
 # do (2041 to 16000 across the published data).
 NOMINAL_ITERATIONS = 4000
 
+# Above this core count the solve is spread thin enough to finish in minutes,
+# while mesh decomposition and I/O -- a mostly-fixed, poorly-scaling cost --
+# stay hours long, so preprocessing legitimately dwarfs the solve.  The
+# "pre-processing >> solver" smell is only a unit-slip signal below this scale;
+# above it, it is just strong scaling and must not warn.
+PREPROC_SCALE_CORES = 1024
+
 # What the OHC1/OHC2 spreadsheets put in Run Consumed Energy when the run was
 # not metered.  A true zero would fall off the log axes the notebook plots on.
 UNREPORTED_ENERGY = 1e-32
@@ -686,7 +693,10 @@ def cross_check(record, where):
                                   % (energy / modelled, _fmt(round(modelled, 6)))))
 
     pre = coerce_number(get("Pre-Processing Wall-Clock Time [s]"))
-    if pre is not None and wct and pre > 10 * wct:
+    # At scale a fast solve with hours of decomposition/I-O is expected, not a
+    # unit slip, so the ratio only means something below PREPROC_SCALE_CORES.
+    big_scale = isinstance(cores, int) and cores >= PREPROC_SCALE_CORES
+    if pre is not None and wct and pre > 10 * wct and not big_scale:
         issues.append(warning("%s 'Pre-Processing Wall-Clock Time [s]'" % where,
                               "is more than ten times the solver time"))
     return issues
