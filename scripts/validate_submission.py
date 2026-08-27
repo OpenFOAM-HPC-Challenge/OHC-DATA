@@ -39,12 +39,32 @@ REFERENCE_DATA = [
 ]
 
 
-def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None):
+def supplied_fields(ohc=None, submission_date=None):
+    """Build the `supplied` map from what the merge knows.
+
+    Only the fields actually provided appear, so a record that already carries
+    OHC or Submission Date keeps its own value.
+    """
+    supplied = {}
+    if ohc is not None:
+        supplied["OHC"] = ohc
+    if submission_date is not None:
+        supplied["Submission Date"] = submission_date
+    return supplied
+
+
+def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None,
+                   supplied=None):
     """Validate every path.  Returns a report dict.
 
     `ignore_keys` lists record keys that must not count as duplicates -- the
     rows a re-appended submission is about to replace, which are still in the
     dataset while it is being checked.
+
+    `supplied` maps a SUPPLIED field (OHC, Submission Date) to the value the
+    merge fills in when a record omits it; it is passed straight through to
+    ``schema.validate_record`` so that stamped records carry the right natural
+    key for duplicate detection.
     """
     known = schema.learn_enums(REFERENCE_DATA) if learn else {}
     ignore_keys = set(ignore_keys or ())
@@ -64,7 +84,8 @@ def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None):
         raw_records, issues = schema.load_submission(path)
         accepted = []
         for where, raw in raw_records:
-            record, record_issues = schema.validate_record(raw, where, known)
+            record, record_issues = schema.validate_record(
+                raw, where, known, supplied)
             key = schema.record_key(record)
             if key in existing:
                 record_issues.append(schema.error(
@@ -196,6 +217,10 @@ def schema_markdown():
              (schema.OPTIONAL, "Optional",
               "May be omitted, `null`, `\"N/A\"`, `\"-\"` or `\"/\"`; the "
               "placeholder in the last column is stored instead."),
+             (schema.SUPPLIED, "Supplied on merge",
+              "May be omitted from a submission: the merge fills `OHC` from the "
+              "current iteration and `Submission Date` from the merge date. A "
+              "submitted value is validated and kept as submitted."),
              (schema.DERIVED, "Derived",
               "Computed on append when absent. A submitted value is kept as "
               "submitted and only cross-checked against the formula.")]
@@ -302,6 +327,13 @@ def main(argv=None):
                         help="write the report as JSON as well")
     parser.add_argument("--title", default="Submission validation",
                         help="heading of the Markdown report")
+    parser.add_argument("--ohc", type=int, metavar="N",
+                        help="OHC iteration to stamp on records that omit it, "
+                             "as the merge does (default: leave absent)")
+    parser.add_argument("--submission-date", metavar="YYYY-MM-DD",
+                        dest="submission_date",
+                        help="Submission Date to stamp on records that omit it, "
+                             "as the merge does (default: leave absent)")
     parser.add_argument("--strict", action="store_true",
                         help="fail on warnings too")
     parser.add_argument("--self-check", action="store_true",
@@ -332,7 +364,8 @@ def main(argv=None):
     if missing:
         parser.error("no such file: %s" % ", ".join(missing))
 
-    report = validate_files(args.paths, args.dataset)
+    supplied = supplied_fields(args.ohc, args.submission_date)
+    report = validate_files(args.paths, args.dataset, supplied=supplied)
     print_report(report)
 
     if args.markdown:

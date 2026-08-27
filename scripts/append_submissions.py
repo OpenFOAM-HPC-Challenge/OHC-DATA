@@ -15,6 +15,12 @@ re-serialised -- so the diff of a merged submission is exactly the lines it
 adds.  ``--update`` is the exception: it drops the rows a previously appended
 file contributed and re-appends them, which does rewrite the whole file.
 
+A submission need not carry ``OHC`` or ``Submission Date``: the merge supplies
+them with ``--ohc`` (the current iteration, when the pull request is opted in by
+its label) and ``--submission-date`` (the merge date).  A submission that does
+carry either keeps its own value.  A record left without one that nothing
+supplies is refused, since the dataset must never have a hole in those columns.
+
 Standard library only, like the rest of scripts/.
 """
 
@@ -105,6 +111,15 @@ def main(argv=None):
     parser.add_argument("--ledger", default=LEDGER, metavar="FILE",
                         help="record of what has been appended "
                              "(default: %(default)s)")
+    parser.add_argument("--ohc", type=int, metavar="N",
+                        help="OHC iteration stamped on any record that omits it "
+                             "-- the current round, passed by the merge from the "
+                             "OHC_CURRENT variable when the pull request is "
+                             "opted in by its label")
+    parser.add_argument("--submission-date", metavar="YYYY-MM-DD",
+                        dest="submission_date",
+                        help="Submission Date stamped on any record that omits "
+                             "it -- the date the pull request was merged")
     parser.add_argument("--update", action="store_true",
                         help="re-append a file whose contents changed since it "
                              "was merged; rewrites the whole dataset")
@@ -158,12 +173,34 @@ def main(argv=None):
     for _, _, _, entry in superseded:
         drop.update(entry.get("keys", []))
 
+    supplied = validator.supplied_fields(args.ohc, args.submission_date)
     report = validator.validate_files([p for p, _, _ in to_process],
-                                      args.dataset, ignore_keys=drop)
+                                      args.dataset, ignore_keys=drop,
+                                      supplied=supplied)
     validator.print_report(report)
     if report["errors"]:
         print("error: refusing to append -- fix the errors above",
               file=sys.stderr)
+        return 1
+
+    # OHC and Submission Date are optional in a submission but never in the
+    # dataset.  Anything the submission left out is filled from --ohc/--date
+    # above; a record still missing one here has nothing to fall back on -- the
+    # pull request was not opted in to the current round, or no merge date was
+    # passed -- so appending it would put a hole in data/data.json.
+    unstamped = []
+    for entry in report["files"]:
+        for record in entry["accepted"]:
+            missing = [name for name in ("OHC", "Submission Date")
+                       if schema.is_missing(record.get(name))]
+            if missing:
+                unstamped.append((entry["path"], record, missing))
+    if unstamped:
+        for path, record, missing in unstamped:
+            print("error: %s: %s is missing %s and nothing supplied it -- pass "
+                  "--ohc / --submission-date, or add the field to the "
+                  "submission" % (path, schema.describe(record),
+                                  " and ".join(missing)), file=sys.stderr)
         return 1
 
     records = schema.load_dataset(args.dataset)

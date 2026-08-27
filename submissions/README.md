@@ -161,7 +161,7 @@ Regenerate the table below in place with
 
 <!-- fields:start -->
 
-### Required (20)
+### Required (18)
 
 Every record must carry these.
 
@@ -171,8 +171,6 @@ Every record must carry these.
 | `Contributor Affiliation` | str | Institution or company the submission is credited to. |
 | `File Name` | str | Name of the source result file this record was harvested from. |
 | `Track` | str | `Hardware Track`, `Software Track` |
-| `OHC` | int | >= 1 Round of the challenge this result was submitted to. |
-| `Submission Date` | date | ISO date, YYYY-MM-DD. For the published rounds this is the workshop the results were presented at, since the spreadsheets did not record a date. |
 | `Software Optimization Category` | str | 'Other' for a plain Hardware Track run. |
 | `Mesh` | str | `coarse`, `medium`, `fine` |
 | `Number of Cells` | number | > 0 Must match the nominal cell count of the mesh. |
@@ -206,6 +204,15 @@ May be omitted, `null`, `"N/A"`, `"-"` or `"/"`; the placeholder in the last col
 | `Storage File-System` | str | stored as `"N/A"` when absent |
 | `Pre-Processing Wall-Clock Time [s]` | number | >= 0 decomposePar + renumberMesh + potentialFoam + applyBoundaryLayer. stored as `null` when absent |
 | `Run Consumed Energy [kWh]` | float | >= 0 What the run actually drew, when it was metered. Required if Is Energy Reported is 1; leave it out otherwise. It is reported for the record and does not feed the energy columns below, which are normalised from the TDP so that entries stay comparable. stored as `1e-32` when absent |
+
+### Supplied on merge (2)
+
+May be omitted from a submission: the merge fills `OHC` from the current iteration and `Submission Date` from the merge date. A submitted value is validated and kept as submitted.
+
+| Field | Type | Accepted values / notes |
+| --- | --- | --- |
+| `OHC` | int | >= 1 Round of the challenge this result was submitted to. May be omitted: the merge stamps the current iteration on a submission that does not carry it. |
+| `Submission Date` | date | ISO date, YYYY-MM-DD. May be omitted: the merge stamps the date the pull request was merged. For the published rounds it is the workshop the results were presented at, since the spreadsheets did not record a date. |
 
 ### Derived (13)
 
