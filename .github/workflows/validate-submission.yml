@@ -1,11 +1,10 @@
 name: validate-submission
 
 # Every pull request that adds or edits a file under submissions/ is checked
-# against the schema in scripts/ohc_schema.py before a human looks at it.  The
-# records are *not* appended here: appending happens on push to the default
-# branch (see append-submissions.yml), because the token a workflow gets on a
-# pull request from a fork -- which is how outside contributions arrive -- is
-# read-only and cannot push to the contributor's branch.
+# against the schema in scripts/ohc_schema.py, and gets a preview plot showing
+# where the new runs land among the published ones.  The records are *not*
+# appended here: appending happens on push to the default branch (see
+# append-submissions.yml).
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -15,15 +14,23 @@ on:
       - 'scripts/ohc_schema.py'
       - 'scripts/validate_submission.py'
       - 'scripts/append_submissions.py'
+      - 'scripts/plot_submission.py'
       - '.github/workflows/validate-submission.yml'
 
 permissions:
-  contents: read
+  contents: write          # the preview branch; nothing else is written
   pull-requests: write
 
 concurrency:
   group: validate-submission-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+
+env:
+  # A pull request from a fork gets a read-only token and no secrets, which
+  # decides both where the plot can be published and whether the report can be
+  # posted as a comment at all.
+  SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+  PREVIEW_BRANCH: previews
 
 jobs:
   validate:
@@ -46,29 +53,36 @@ jobs:
           git fetch --no-tags --quiet origin \
             "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
           # --diff-filter=d keeps added/modified files and drops deletions.
+          # submissions/example/ is the sample submission, not a submission:
+          # it is never validated as one, never plotted and never appended.
           git diff --name-only --diff-filter=d \
-            "origin/${BASE_REF}...HEAD" -- 'submissions/*.json' > changed.txt
+            "origin/${BASE_REF}...HEAD" \
+            -- 'submissions/*.json' ':(exclude)submissions/example/*' \
+            > changed.txt
           echo "count=$(wc -l < changed.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
           echo "Changed submission files:"
           cat changed.txt
 
       - name: Check the schema still accepts the existing dataset
         # A change to the schema must not start rejecting records that are
-        # already published.  Seven rows carried over from the OHC1 spreadsheet
-        # are genuinely broken -- six with a zero wall-clock time, one GPU run
-        # with no GPU model -- hence the allowance.  Lower it whenever those
-        # rows get fixed.
-        run: python3 scripts/validate_submission.py --self-check --max-rejected 7
+        # already published.  The allowance is zero: every record in
+        # data/data.json validates, and it should stay that way.
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_submission.py --self-check
+          # The sample is what contributors copy, so it has to stay valid --
+          # checked here rather than as a submission, since it is neither
+          # plotted nor appended.
+          python3 scripts/validate_submission.py submissions/example/*.json
 
       - name: Validate the submitted records
         id: validate
+        # Reports rather than fails, so the plot still gets drawn and the
+        # report still reaches the contributor.  The last step fails the check.
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ "${{ steps.changed.outputs.count }}" -eq 0 ]; then
-            echo '## Submission validation' > report.md
-            echo >> report.md
-            echo 'No submission files changed in this pull request.' >> report.md
-            cat report.md >> "$GITHUB_STEP_SUMMARY"
+            printf '## Submission validation\n\nNo submission files changed in this pull request.\n' > report.md
             exit 0
           fi
           rc=0
@@ -76,14 +90,114 @@ jobs:
           tr '\n' '\0' < changed.txt \
             | xargs -0 python3 scripts/validate_submission.py \
                 --markdown report.md --json report.json || rc=$?
-          cat report.md >> "$GITHUB_STEP_SUMMARY"
-          exit $rc
+          [ "$rc" -eq 0 ] || echo "failed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Draw the preview plot
+        id: plot
+        if: steps.changed.outputs.count != '0'
+        # Never fails the check: a missing picture is not a reason to block a
+        # valid submission, and an invalid one has no records to draw.
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
+          tr '\n' '\0' < changed.txt \
+            | xargs -0 python3 scripts/plot_submission.py \
+                --output preview.svg --png preview.png || true
+          [ -s preview.png ] && echo "drawn=true" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish the plot to the preview branch
+        id: publish_branch
+        if: steps.plot.outputs.drawn == 'true' && env.SAME_REPO == 'true'
+        # An orphan branch of nothing but PNGs, rewritten to a single commit
+        # each time so it never accumulates history.  raw.githubusercontent
+        # serves them as image/png, which is what a comment needs.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          cd "$work"
+          git init -q
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Restore the other pull requests' plots first, so copying this one
+          # in afterwards replaces just it.
+          if git fetch --depth=1 -q origin "$PREVIEW_BRANCH" 2>/dev/null; then
+            git checkout -q FETCH_HEAD -- . 2>/dev/null || true
+          fi
+          cp "$GITHUB_WORKSPACE/preview.png" "pr-${PR}.png"
+          git checkout -q --orphan "$PREVIEW_BRANCH"
+          git add -A
+          git commit -qm "previews: plot for #${PR}"
+          git push -q --force origin "$PREVIEW_BRANCH"
+          # Addressed by branch, not by commit: the branch is force-pushed on
+          # every run, so a SHA in an older comment stops resolving.
+          #
+          # github.com/OWNER/REPO/raw/... rather than raw.githubusercontent.com
+          # because this repository is private: raw.githubusercontent serves
+          # private content only to token-authenticated requests, and GitHub's
+          # image proxy fetches anonymously.  URLs on github.com itself are not
+          # proxied, so a reader's own session fetches them.  If the image
+          # still does not render, the repository has to be public for an
+          # inline preview to work at all -- the artifact link below always
+          # works either way.
+          echo "url=https://github.com/${GITHUB_REPOSITORY}/raw/${PREVIEW_BRANCH}/pr-${PR}.png" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Upload the plot for a fork pull request
+        id: publish_catbox
+        if: >-
+          steps.plot.outputs.drawn == 'true' && env.SAME_REPO != 'true'
+          && github.event.repository.private == false
+        # A fork's token cannot push to this repository, so the plot goes to a
+        # keyless public image host instead -- the one case where a picture
+        # built from the submission leaves the repository.
+        #
+        # Gated on the repository being public.  While it is private, a fork
+        # can only come from someone who already has access, and uploading
+        # their plot would publish unreleased data to a public host; the fork
+        # case then falls back to the artifact.  Best effort otherwise: if the
+        # host is down the report simply arrives without the plot.
+        run: |
+          set -uo pipefail
+          url="$(curl -sS --max-time 60 \
+                   -F 'reqtype=fileupload' -F 'fileToUpload=@preview.png' \
+                   https://catbox.moe/user/api.php || true)"
+          case "$url" in
+            https://*.png) echo "url=$url" >> "$GITHUB_OUTPUT" ;;
+            *) echo "upload failed or returned $url -- continuing without it" ;;
+          esac
+          exit 0
+
+      - name: Assemble the report
+        env:
+          PLOT_URL: ${{ steps.publish_branch.outputs.url || steps.publish_catbox.outputs.url }}
+        run: |
+          set -euo pipefail
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -s preview.png ]; then
+            {
+              printf '\n### Where this submission lands\n\n'
+              if [ -n "${PLOT_URL}" ]; then
+                printf '![Time-to-solution against energy-to-solution, published runs in grey and this submission in red](%s)\n\n' "${PLOT_URL}"
+              fi
+              printf 'Grey: already in `data/data.json`. Red: this pull request. '
+              printf 'Lower left is better. '
+              printf '[Download the plot](%s) if it does not render above.\n' \
+                "${run_url}#artifacts"
+            } >> report.md
+          fi
+          [ -f report.md ] && cat report.md >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
       - name: Comment the report on the pull request
-        # Best effort: a pull request from a fork gets a read-only token, so the
-        # comment cannot be posted there and the check result plus the job
-        # summary are what the contributor sees.
-        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        # A fork pull request gets a read-only token, so no comment can be
+        # posted there and the job summary above is what the contributor reads.
+        if: always() && env.SAME_REPO == 'true'
         continue-on-error: true
         uses: actions/github-script@v7
         with:
@@ -105,7 +219,7 @@ jobs:
                 { owner, repo, issue_number, body });
             }
 
-      - name: Keep the report with the run
+      - name: Keep the report and the plot with the run
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -113,4 +227,12 @@ jobs:
           path: |
             report.md
             report.json
+            preview.svg
+            preview.png
           if-no-files-found: ignore
+
+      - name: Fail if any record was rejected
+        if: steps.validate.outputs.failed == 'true'
+        run: |
+          echo "The submission has validation errors; see the report above."
+          exit 1

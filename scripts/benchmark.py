@@ -1292,11 +1292,14 @@ def write_json_submission(outdir, mesh, meta, runs):
             "Pre-Processing Wall-Clock Time [s]": run.get(
                 "time_for_pre_processing_s"),
             "System TDP [W]": run.get("tdp_of_system_w"),
-            "Run Consumed Energy [kWh]": run.get(
-                "total_energy_to_completion_kwh"),
-            # The harvester models the energy from the node TDP; a site that
-            # metered the run for real edits this to 1 and puts the measured
-            # figure above.
+            # Only a metered figure belongs here.  The harvester's own energy
+            # is modelled from the node TDP, and the dataset derives its energy
+            # columns from the TDP anyway, so writing it out would just claim a
+            # measurement that was never taken.  A site that did meter the run
+            # sets the flag to 1 and fills in what it measured.
+            "Run Consumed Energy [kWh]": (
+                run.get("total_energy_to_completion_kwh")
+                if run.get("is_energy_measured") else None),
             "Is Energy Reported": 1 if run.get("is_energy_measured") else 0,
             "Is Partial": 1 if provenance.get("is_partial") else 0,
         })

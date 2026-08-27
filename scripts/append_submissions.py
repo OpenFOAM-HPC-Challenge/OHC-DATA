@@ -61,13 +61,25 @@ def relative(path):
     return os.path.relpath(os.path.abspath(path), REPO).replace(os.sep, "/")
 
 
-def discover(submissions_dir):
-    """Every submission directly in submissions/.
+# Subdirectories of submissions/ that hold JSON which is not a submission.
+NOT_SUBMISSIONS = ("example",)
 
-    Not recursive on purpose: submissions/example/ holds the sample file, and
-    a sample must never end up in the dataset.
+
+def discover(submissions_dir):
+    """Every submission under submissions/, at any depth.
+
+    Contributors group their files in a folder of their own, so this recurses
+    -- except into the directories listed in NOT_SUBMISSIONS, which hold the
+    sample submission that must never reach the dataset.
     """
-    return sorted(glob.glob(os.path.join(submissions_dir, "*.json")))
+    found = []
+    for root, dirs, names in os.walk(submissions_dir):
+        dirs[:] = sorted(d for d in dirs
+                         if os.path.relpath(os.path.join(root, d),
+                                            submissions_dir).split(os.sep)[0]
+                         not in NOT_SUBMISSIONS)
+        found.extend(os.path.join(root, n) for n in names if n.endswith(".json"))
+    return sorted(found)
 
 
 def rewrite_dataset(path, records):

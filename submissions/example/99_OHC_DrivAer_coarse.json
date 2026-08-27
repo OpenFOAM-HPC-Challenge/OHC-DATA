@@ -30,7 +30,6 @@
       "Time per Iteration [s]": 17.9,
       "Pre-Processing Wall-Clock Time [s]": 120.0,
       "System TDP [W]": 700.0,
-      "Run Consumed Energy [kWh]": 13.922222,
       "Is Energy Reported": 0,
       "Is Partial": 0
     },
@@ -41,7 +40,6 @@
       "Time per Iteration [s]": 9.2,
       "Pre-Processing Wall-Clock Time [s]": 169.706,
       "System TDP [W]": 1400.0,
-      "Run Consumed Energy [kWh]": 14.311111,
       "Is Energy Reported": 0,
       "Is Partial": 0
     },
@@ -52,7 +50,6 @@
       "Time per Iteration [s]": 4.85,
       "Pre-Processing Wall-Clock Time [s]": 240.0,
       "System TDP [W]": 2800.0,
-      "Run Consumed Energy [kWh]": 15.088889,
       "Is Energy Reported": 0,
       "Is Partial": 0
     }
