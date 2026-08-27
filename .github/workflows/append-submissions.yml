@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read           # read the merged PR's labels to opt in stamping
 
 concurrency:
   group: append-submissions     # never two appends racing for the same file
@@ -30,12 +31,47 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Append every submission the ledger has not seen
-        id: append
+      - name: Resolve the OHC iteration and merge date to stamp
+        id: stamp
+        # A submission need not carry OHC or Submission Date; the merge fills
+        # them.  Submission Date is the merge commit's date in UTC.  OHC is the
+        # OHC_CURRENT repository variable, but only when the merged pull request
+        # carries the opt-in label (OHC_STAMP_LABEL, default "auto-ohc") -- the
+        # label is what says "stamp this one with the current round".
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OHC_CURRENT: ${{ vars.OHC_CURRENT }}
+          STAMP_LABEL: ${{ vars.OHC_STAMP_LABEL || 'auto-ohc' }}
         run: |
           set -euo pipefail
-          python3 scripts/append_submissions.py --all --summary summary.md \
-            | tee append.log
+          date="$(TZ=UTC git show -s --date=format-local:%Y-%m-%d --format=%cd HEAD)"
+          echo "date=${date}" >> "$GITHUB_OUTPUT"
+
+          ohc=""
+          if [ -n "${OHC_CURRENT}" ]; then
+            # Pull requests whose merge produced this commit; usually exactly one.
+            labels="$(gh api -H 'Accept: application/vnd.github+json' \
+                        "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+                        --jq '.[].labels[].name' 2>/dev/null || true)"
+            if printf '%s\n' "${labels}" | grep -qxF "${STAMP_LABEL}"; then
+              ohc="${OHC_CURRENT}"
+            fi
+          fi
+          echo "ohc=${ohc}" >> "$GITHUB_OUTPUT"
+          echo "stamping date=${date} ohc=${ohc:-<none>} (label='${STAMP_LABEL}')"
+
+      - name: Append every submission the ledger has not seen
+        id: append
+        env:
+          STAMP_OHC: ${{ steps.stamp.outputs.ohc }}
+          STAMP_DATE: ${{ steps.stamp.outputs.date }}
+        run: |
+          set -euo pipefail
+          args=(--all --summary summary.md --submission-date "${STAMP_DATE}")
+          if [ -n "${STAMP_OHC}" ]; then
+            args+=(--ohc "${STAMP_OHC}")
+          fi
+          python3 scripts/append_submissions.py "${args[@]}" | tee append.log
           echo "records=$(sed -n 's/^::appended:://p' append.log | tail -1)" \
             >> "$GITHUB_OUTPUT"
           if [ -f summary.md ]; then cat summary.md >> "$GITHUB_STEP_SUMMARY"; fi

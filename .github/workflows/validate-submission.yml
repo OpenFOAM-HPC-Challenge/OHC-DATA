@@ -79,17 +79,34 @@ jobs:
         id: validate
         # Reports rather than fails, so the plot still gets drawn and the
         # report still reaches the contributor.  The last step fails the check.
+        #
+        # OHC and Submission Date are optional in a submission -- the merge
+        # stamps them (see append-submissions.yml).  When this pull request
+        # carries the opt-in label, the current OHC_CURRENT is passed here too,
+        # so a submission that omits OHC is previewed and de-duplicated as the
+        # round it will be stamped with.  The merge date is not known yet, so
+        # Submission Date stays absent in the preview.
+        env:
+          OHC_CURRENT: ${{ vars.OHC_CURRENT }}
+          STAMP_LABEL: ${{ vars.OHC_STAMP_LABEL || 'auto-ohc' }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -uo pipefail
           if [ "${{ steps.changed.outputs.count }}" -eq 0 ]; then
             printf '## Submission validation\n\nNo submission files changed in this pull request.\n' > report.md
             exit 0
           fi
+          stamp=()
+          if [ -n "${OHC_CURRENT}" ] \
+             && printf '%s' "${PR_LABELS}" \
+                  | jq -e --arg l "${STAMP_LABEL}" 'index($l)' >/dev/null; then
+            stamp=(--ohc "${OHC_CURRENT}")
+          fi
           rc=0
           # NUL-separated, so a file name with a space in it survives.
           tr '\n' '\0' < changed.txt \
             | xargs -0 python3 scripts/validate_submission.py \
-                --markdown report.md --json report.json || rc=$?
+                "${stamp[@]}" --markdown report.md --json report.json || rc=$?
           [ "$rc" -eq 0 ] || echo "failed=true" >> "$GITHUB_OUTPUT"
 
       - name: Draw the preview plot

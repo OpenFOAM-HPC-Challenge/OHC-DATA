@@ -42,7 +42,9 @@
         "FVOPS per Energy":98893.503411902,
         "FVOPS per kW":95827804.8061329871,
         "FVOPS per Energy per Iteration":98893.503411902,
-        "FVOPS per Node":67079463.364293091
+        "FVOPS per Node":67079463.364293091,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Engys",
@@ -87,7 +89,9 @@
         "FVOPS per Energy":154042.5261647155,
         "FVOPS per kW":84569346.8644288331,
         "FVOPS per Energy per Iteration":154042.5261647155,
-        "FVOPS per Node":118397085.6102003604
+        "FVOPS per Node":118397085.6102003604,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -132,7 +136,9 @@
         "FVOPS per Energy":20387.7613775935,
         "FVOPS per kW":38776247.9050967768,
         "FVOPS per Energy per Iteration":20387.7613775935,
-        "FVOPS per Node":62041996.6481548399
+        "FVOPS per Node":62041996.6481548399,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -177,7 +183,9 @@
         "FVOPS per Energy":29071.5511813422,
         "FVOPS per kW":32741616.4813528173,
         "FVOPS per Energy per Iteration":29071.5511813422,
-        "FVOPS per Node":52386586.3701645061
+        "FVOPS per Node":52386586.3701645061,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -222,7 +230,9 @@
         "FVOPS per Energy":22288.2685872731,
         "FVOPS per kW":40543307.8116646484,
         "FVOPS per Energy per Iteration":22288.2685872731,
-        "FVOPS per Node":64869292.4986634403
+        "FVOPS per Node":64869292.4986634403,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -267,7 +277,9 @@
         "FVOPS per Energy":31929.779713097,
         "FVOPS per kW":34313417.593128942,
         "FVOPS per Energy per Iteration":31929.779713097,
-        "FVOPS per Node":54901468.1490063071
+        "FVOPS per Node":54901468.1490063071,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -312,7 +324,9 @@
         "FVOPS per Energy":33298.1768690231,
         "FVOPS per kW":49555429.0072283745,
         "FVOPS per Energy per Iteration":33298.1768690231,
-        "FVOPS per Node":79288686.4115653932
+        "FVOPS per Node":79288686.4115653932,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -357,7 +371,9 @@
         "FVOPS per Energy":43815.1220096247,
         "FVOPS per kW":40195554.7804096341,
         "FVOPS per Energy per Iteration":43815.1220096247,
-        "FVOPS per Node":64312887.648655422
+        "FVOPS per Node":64312887.648655422,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -402,7 +418,9 @@
         "FVOPS per Energy":46676.3246452962,
         "FVOPS per kW":58671790.0067025125,
         "FVOPS per Energy per Iteration":46676.3246452962,
-        "FVOPS per Node":93874864.0107240081
+        "FVOPS per Node":93874864.0107240081,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -447,7 +465,9 @@
         "FVOPS per Energy":53723.6301282673,
         "FVOPS per kW":44509087.3977422491,
         "FVOPS per Energy per Iteration":53723.6301282673,
-        "FVOPS per Node":71214539.8363876045
+        "FVOPS per Node":71214539.8363876045,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -492,7 +512,9 @@
         "FVOPS per Energy":885.4593565837,
         "FVOPS per kW":14455739.6266585141,
         "FVOPS per Energy per Iteration":885.4593565837,
-        "FVOPS per Node":14455739.6266585141
+        "FVOPS per Node":14455739.6266585141,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -537,7 +559,9 @@
         "FVOPS per Energy":1899.1175758562,
         "FVOPS per kW":14969832.1283518579,
         "FVOPS per Energy per Iteration":1899.1175758562,
-        "FVOPS per Node":14969832.1283518579
+        "FVOPS per Node":14969832.1283518579,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -582,7 +606,9 @@
         "FVOPS per Energy":3700.6496140399,
         "FVOPS per kW":14776275.8240482137,
         "FVOPS per Energy per Iteration":3700.6496140399,
-        "FVOPS per Node":14776275.8240482137
+        "FVOPS per Node":14776275.8240482137,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -627,7 +653,9 @@
         "FVOPS per Energy":6844.2608608775,
         "FVOPS per kW":14209352.3918539304,
         "FVOPS per Energy per Iteration":6844.2608608775,
-        "FVOPS per Node":14209352.3918539304
+        "FVOPS per Node":14209352.3918539304,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -672,7 +700,9 @@
         "FVOPS per Energy":10458.0104815421,
         "FVOPS per kW":14341346.03644282,
         "FVOPS per Energy per Iteration":10458.0104815421,
-        "FVOPS per Node":14341346.0364428218
+        "FVOPS per Node":14341346.0364428218,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -717,7 +747,9 @@
         "FVOPS per Energy":14997.5583354734,
         "FVOPS per kW":14873264.1154600959,
         "FVOPS per Energy per Iteration":14997.5583354734,
-        "FVOPS per Node":14873264.1154600959
+        "FVOPS per Node":14873264.1154600959,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -762,7 +794,9 @@
         "FVOPS per Energy":19616.402543667,
         "FVOPS per kW":12027924.5408151932,
         "FVOPS per Energy per Iteration":19616.402543667,
-        "FVOPS per Node":12027924.5408151932
+        "FVOPS per Node":12027924.5408151932,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -807,7 +841,9 @@
         "FVOPS per Energy":12325.8396424963,
         "FVOPS per kW":7784731.5245254291,
         "FVOPS per Energy per Iteration":12325.8396424963,
-        "FVOPS per Node":7784731.5245254291
+        "FVOPS per Node":7784731.5245254291,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"KIT\/TUM",
@@ -852,7 +888,9 @@
         "FVOPS per Energy":3619.2975502424,
         "FVOPS per kW":21691212.0807370283,
         "FVOPS per Energy per Iteration":3619.2975502424,
-        "FVOPS per Node":10845606.0403685141
+        "FVOPS per Node":10845606.0403685141,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -897,7 +935,9 @@
         "FVOPS per Energy":15868.7814853409,
         "FVOPS per kW":38386582.4130396247,
         "FVOPS per Energy per Iteration":15868.7814853409,
-        "FVOPS per Node":26870607.6891277395
+        "FVOPS per Node":26870607.6891277395,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -942,7 +982,9 @@
         "FVOPS per Energy":28740.4934185597,
         "FVOPS per kW":36529167.1349893212,
         "FVOPS per Energy per Iteration":28740.4934185597,
-        "FVOPS per Node":51140833.9889850542
+        "FVOPS per Node":51140833.9889850542,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -987,7 +1029,9 @@
         "FVOPS per Energy":37864.4629316228,
         "FVOPS per kW":29647874.4754606783,
         "FVOPS per Energy per Iteration":37864.4629316228,
-        "FVOPS per Node":83014048.5312899053
+        "FVOPS per Node":83014048.5312899053,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1032,7 +1076,9 @@
         "FVOPS per Energy":28161.4669334121,
         "FVOPS per kW":18079661.7712505572,
         "FVOPS per Energy per Iteration":28161.4669334121,
-        "FVOPS per Node":101246105.9190031141
+        "FVOPS per Node":101246105.9190031141,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1077,7 +1123,9 @@
         "FVOPS per Energy":17941.2424310384,
         "FVOPS per kW":40816326.5306122452,
         "FVOPS per Energy per Iteration":17941.2424310384,
-        "FVOPS per Node":28571428.5714285709
+        "FVOPS per Node":28571428.5714285709,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1122,7 +1170,9 @@
         "FVOPS per Energy":29384.2605062067,
         "FVOPS per kW":36936015.4563018605,
         "FVOPS per Energy per Iteration":29384.2605062067,
-        "FVOPS per Node":25855210.8194113001
+        "FVOPS per Node":25855210.8194113001,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1167,7 +1217,9 @@
         "FVOPS per Energy":43866.7530504265,
         "FVOPS per kW":36848072.5623582825,
         "FVOPS per Energy per Iteration":43866.7530504265,
-        "FVOPS per Node":19345238.095238097
+        "FVOPS per Node":19345238.095238097,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1212,7 +1264,9 @@
         "FVOPS per Energy":1646.8559622712,
         "FVOPS per kW":13459351.9847662784,
         "FVOPS per Energy per Iteration":1646.8559622712,
-        "FVOPS per Node":13459351.9847662784
+        "FVOPS per Node":13459351.9847662784,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1257,7 +1311,9 @@
         "FVOPS per Energy":3704.1871147143,
         "FVOPS per kW":14273412.0415997542,
         "FVOPS per Energy per Iteration":3704.1871147143,
-        "FVOPS per Node":14273412.0415997542
+        "FVOPS per Node":14273412.0415997542,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1302,7 +1358,9 @@
         "FVOPS per Energy":7815.1948157831,
         "FVOPS per kW":14660076.9927731138,
         "FVOPS per Energy per Iteration":7815.1948157831,
-        "FVOPS per Node":14660076.9927731138
+        "FVOPS per Node":14660076.9927731138,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1347,7 +1405,9 @@
         "FVOPS per Energy":12551.1313151217,
         "FVOPS per kW":13136896.7257462703,
         "FVOPS per Energy per Iteration":12551.1313151217,
-        "FVOPS per Node":13136896.7257462703
+        "FVOPS per Node":13136896.7257462703,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1392,7 +1452,9 @@
         "FVOPS per Energy":16922.7420702459,
         "FVOPS per kW":12454924.1524756365,
         "FVOPS per Energy per Iteration":16922.7420702459,
-        "FVOPS per Node":12454924.1524756383
+        "FVOPS per Node":12454924.1524756383,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1437,7 +1499,9 @@
         "FVOPS per Energy":21117.2365049345,
         "FVOPS per kW":12049107.8911023419,
         "FVOPS per Energy per Iteration":21117.2365049345,
-        "FVOPS per Node":12049107.8911023419
+        "FVOPS per Node":12049107.8911023419,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1482,7 +1546,9 @@
         "FVOPS per Energy":22387.0036743083,
         "FVOPS per kW":8772418.4311075211,
         "FVOPS per Energy per Iteration":22387.0036743083,
-        "FVOPS per Node":8772418.4311075211
+        "FVOPS per Node":8772418.4311075211,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -1527,7 +1593,9 @@
         "FVOPS per Energy":14097.6642938383,
         "FVOPS per kW":6563245.8778713141,
         "FVOPS per Energy per Iteration":14097.6642938383,
-        "FVOPS per Node":6563245.8778713141
+        "FVOPS per Node":6563245.8778713141,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1572,7 +1640,9 @@
         "FVOPS per Energy":9170.9635217448,
         "FVOPS per kW":14591002.9630959872,
         "FVOPS per Energy per Iteration":9170.9635217448,
-        "FVOPS per Node":40854808.2966687605
+        "FVOPS per Node":40854808.2966687605,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1617,7 +1687,9 @@
         "FVOPS per Energy":11091.0857292467,
         "FVOPS per kW":11346180.7010194119,
         "FVOPS per Energy per Iteration":11091.0857292467,
-        "FVOPS per Node":63538611.9257087037
+        "FVOPS per Node":63538611.9257087037,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1662,7 +1734,9 @@
         "FVOPS per Energy":7245.1813970493,
         "FVOPS per kW":6484437.3503591372,
         "FVOPS per Energy per Iteration":7245.1813970493,
-        "FVOPS per Node":36312849.1620111689
+        "FVOPS per Node":36312849.1620111689,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1707,7 +1781,9 @@
         "FVOPS per Energy":6502.9799255211,
         "FVOPS per kW":4343990.5902480753,
         "FVOPS per Energy per Iteration":6502.9799255211,
-        "FVOPS per Node":24326347.3053892218
+        "FVOPS per Node":24326347.3053892218,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -1752,7 +1828,9 @@
         "FVOPS per Energy":6554.1456322286,
         "FVOPS per kW":12334902.0798542593,
         "FVOPS per Energy per Iteration":6554.1456322286,
-        "FVOPS per Node":8634431.4558979813
+        "FVOPS per Node":8634431.4558979813,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -1797,7 +1875,9 @@
         "FVOPS per Energy":609.8122727125,
         "FVOPS per kW":8015489.9246528912,
         "FVOPS per Energy per Iteration":609.8122727125,
-        "FVOPS per Node":4488674.357805619
+        "FVOPS per Node":4488674.357805619,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -1842,7 +1922,9 @@
         "FVOPS per Energy":1143.2326280612,
         "FVOPS per kW":7760403.4467800213,
         "FVOPS per Energy per Iteration":1143.2326280612,
-        "FVOPS per Node":4345825.9301968114
+        "FVOPS per Node":4345825.9301968114,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -1887,7 +1969,9 @@
         "FVOPS per Energy":2753.2879229879,
         "FVOPS per kW":8515846.2443418093,
         "FVOPS per Energy per Iteration":2753.2879229879,
-        "FVOPS per Node":4768873.8968314128
+        "FVOPS per Node":4768873.8968314128,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -1932,7 +2016,9 @@
         "FVOPS per Energy":6807.8678803551,
         "FVOPS per kW":9468747.9955319464,
         "FVOPS per Energy per Iteration":6807.8678803551,
-        "FVOPS per Node":5302498.87749789
+        "FVOPS per Node":5302498.87749789,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -1977,7 +2063,9 @@
         "FVOPS per Energy":10539.83385141,
         "FVOPS per kW":8330841.7220798796,
         "FVOPS per Energy per Iteration":10539.83385141,
-        "FVOPS per Node":4665271.364364733
+        "FVOPS per Node":4665271.364364733,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2022,7 +2110,9 @@
         "FVOPS per Energy":13758.8384317274,
         "FVOPS per kW":6730508.6783054862,
         "FVOPS per Energy per Iteration":13758.8384317274,
-        "FVOPS per Node":3769084.8598510725
+        "FVOPS per Node":3769084.8598510725,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2067,7 +2157,9 @@
         "FVOPS per Energy":15083.1396272902,
         "FVOPS per kW":4982965.5083071562,
         "FVOPS per Energy per Iteration":15083.1396272902,
-        "FVOPS per Node":2790460.6846520077
+        "FVOPS per Node":2790460.6846520077,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2112,7 +2204,9 @@
         "FVOPS per Energy":8158.3858115,
         "FVOPS per kW":2591368.2127912282,
         "FVOPS per Energy per Iteration":8158.3858115,
-        "FVOPS per Node":1451166.1991630879
+        "FVOPS per Node":1451166.1991630879,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2157,7 +2251,9 @@
         "FVOPS per Energy":1905.1296438818,
         "FVOPS per kW":10017959.2745188177,
         "FVOPS per Energy per Iteration":1905.1296438818,
-        "FVOPS per Node":1402514.2984326344
+        "FVOPS per Node":1402514.2984326344,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2202,7 +2298,9 @@
         "FVOPS per Energy":1624.9905407221,
         "FVOPS per kW":6542254.2089933874,
         "FVOPS per Energy per Iteration":1624.9905407221,
-        "FVOPS per Node":915915.5892590742
+        "FVOPS per Node":915915.5892590742,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -2247,7 +2345,9 @@
         "FVOPS per Energy":1171.6332067334,
         "FVOPS per kW":3928102.7089738948,
         "FVOPS per Energy per Iteration":1171.6332067334,
-        "FVOPS per Node":549934.3792563452
+        "FVOPS per Node":549934.3792563452,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2292,7 +2392,9 @@
         "FVOPS per Energy":2552.8770953015,
         "FVOPS per kW":16102067.5688421372,
         "FVOPS per Energy per Iteration":2552.8770953015,
-        "FVOPS per Node":10305323.2440589685
+        "FVOPS per Node":10305323.2440589685,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2337,7 +2439,9 @@
         "FVOPS per Energy":4804.257203475,
         "FVOPS per kW":15619416.9581954479,
         "FVOPS per Energy per Iteration":4804.257203475,
-        "FVOPS per Node":9996426.853245087
+        "FVOPS per Node":9996426.853245087,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2382,7 +2486,9 @@
         "FVOPS per Energy":10466.2077946343,
         "FVOPS per kW":16301642.7787397299,
         "FVOPS per Energy per Iteration":10466.2077946343,
-        "FVOPS per Node":10433051.3783934265
+        "FVOPS per Node":10433051.3783934265,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2427,7 +2533,9 @@
         "FVOPS per Energy":25233.421524024,
         "FVOPS per kW":17898216.9975590408,
         "FVOPS per Energy per Iteration":25233.421524024,
-        "FVOPS per Node":11454858.8784377854
+        "FVOPS per Node":11454858.8784377854,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2472,7 +2580,9 @@
         "FVOPS per Energy":22703.2556753383,
         "FVOPS per kW":49350178.8675943688,
         "FVOPS per Energy per Iteration":22703.2556753383,
-        "FVOPS per Node":108570393.5087076128
+        "FVOPS per Node":108570393.5087076128,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -2517,7 +2627,9 @@
         "FVOPS per Energy":30880.3681753053,
         "FVOPS per kW":40697796.7054172009,
         "FVOPS per Energy per Iteration":30880.3681753053,
-        "FVOPS per Node":89535152.751917854
+        "FVOPS per Node":89535152.751917854,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"TUM",
@@ -2562,7 +2674,9 @@
         "FVOPS per Energy":761.1523843796,
         "FVOPS per kW":15795215.6396236625,
         "FVOPS per Energy per Iteration":761.1523843796,
-        "FVOPS per Node":11372555.2605290376
+        "FVOPS per Node":11372555.2605290376,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -2607,7 +2721,9 @@
         "FVOPS per Energy":3609.9411366669,
         "FVOPS per kW":8721617.7861873228,
         "FVOPS per Energy per Iteration":3609.9411366669,
-        "FVOPS per Node":48841059.6026490107
+        "FVOPS per Node":48841059.6026490107,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -2652,7 +2768,9 @@
         "FVOPS per Energy":4425.1921418428,
         "FVOPS per kW":6828071.4748634379,
         "FVOPS per Energy per Iteration":4425.1921418428,
-        "FVOPS per Node":38237200.2592352554
+        "FVOPS per Node":38237200.2592352554,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -2697,7 +2815,9 @@
         "FVOPS per Energy":1683.3067146432,
         "FVOPS per kW":14792899.4082840234,
         "FVOPS per Energy per Iteration":1683.3067146432,
-        "FVOPS per Node":7396449.7041420117
+        "FVOPS per Node":7396449.7041420117,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -2742,7 +2862,9 @@
         "FVOPS per Energy":514.2330037443,
         "FVOPS per kW":12982840.6455332432,
         "FVOPS per Energy per Iteration":514.2330037443,
-        "FVOPS per Node":9347645.2647839356
+        "FVOPS per Node":9347645.2647839356,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -2787,7 +2909,9 @@
         "FVOPS per Energy":6610.1796767021,
         "FVOPS per kW":28423772.6098191254,
         "FVOPS per Energy per Iteration":6610.1796767021,
-        "FVOPS per Node":25581395.3488372117
+        "FVOPS per Node":25581395.3488372117,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -2832,7 +2956,9 @@
         "FVOPS per Energy":2184.8877213494,
         "FVOPS per kW":14044458.2728341259,
         "FVOPS per Energy per Iteration":2184.8877213494,
-        "FVOPS per Node":10112009.9564405717
+        "FVOPS per Node":10112009.9564405717,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -2877,7 +3003,9 @@
         "FVOPS per Energy":63.6968606295,
         "FVOPS per kW":3537214.0644776244,
         "FVOPS per Energy per Iteration":63.6968606295,
-        "FVOPS per Node":1980839.8761074697
+        "FVOPS per Node":1980839.8761074697,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"KIT\/TUM",
@@ -2922,7 +3050,9 @@
         "FVOPS per Energy":1566.5661093065,
         "FVOPS per kW":18564604.6025072373,
         "FVOPS per Energy per Iteration":1566.5661093065,
-        "FVOPS per Node":9282302.3012536187
+        "FVOPS per Node":9282302.3012536187,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -2967,7 +3097,9 @@
         "FVOPS per Energy":3724.7587045244,
         "FVOPS per kW":15559862.3321058024,
         "FVOPS per Energy per Iteration":3724.7587045244,
-        "FVOPS per Node":15559862.3321058024
+        "FVOPS per Node":15559862.3321058024,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3012,7 +3144,9 @@
         "FVOPS per Energy":9392.949860471,
         "FVOPS per kW":17472002.4743962437,
         "FVOPS per Energy per Iteration":9392.949860471,
-        "FVOPS per Node":17472002.4743962437
+        "FVOPS per Node":17472002.4743962437,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3057,7 +3191,9 @@
         "FVOPS per Energy":21456.3033844193,
         "FVOPS per kW":18672571.5957072675,
         "FVOPS per Energy per Iteration":21456.3033844193,
-        "FVOPS per Node":18672571.5957072675
+        "FVOPS per Node":18672571.5957072675,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3102,7 +3238,9 @@
         "FVOPS per Energy":25021.1343684161,
         "FVOPS per kW":14258215.7629691139,
         "FVOPS per Energy per Iteration":25021.1343684161,
-        "FVOPS per Node":14258215.7629691139
+        "FVOPS per Node":14258215.7629691139,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3147,7 +3285,9 @@
         "FVOPS per Energy":30272.5262755636,
         "FVOPS per kW":12805318.5822390318,
         "FVOPS per Energy per Iteration":30272.5262755636,
-        "FVOPS per Node":12805318.5822390318
+        "FVOPS per Node":12805318.5822390318,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3192,7 +3332,9 @@
         "FVOPS per Energy":35880.0172521767,
         "FVOPS per kW":12073217.0562351663,
         "FVOPS per Energy per Iteration":35880.0172521767,
-        "FVOPS per Node":12073217.0562351663
+        "FVOPS per Node":12073217.0562351663,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3237,7 +3379,9 @@
         "FVOPS per Energy":27761.8381871231,
         "FVOPS per kW":7509409.6850281013,
         "FVOPS per Energy per Iteration":27761.8381871231,
-        "FVOPS per Node":7509409.6850281013
+        "FVOPS per Node":7509409.6850281013,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Federal Waterways Engineering and Research Institute (BAW), Germany",
@@ -3282,7 +3426,9 @@
         "FVOPS per Energy":12539.9290015315,
         "FVOPS per kW":4120819.5612330055,
         "FVOPS per Energy per Iteration":12539.9290015315,
-        "FVOPS per Node":4120819.561233006
+        "FVOPS per Node":4120819.561233006,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -3327,7 +3473,9 @@
         "FVOPS per Energy":30539.5507674632,
         "FVOPS per kW":35875115.6820467487,
         "FVOPS per Energy per Iteration":30539.5507674632,
-        "FVOPS per Node":200900647.8194617927
+        "FVOPS per Node":200900647.8194617927,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -3372,7 +3520,9 @@
         "FVOPS per Energy":42636.6437515493,
         "FVOPS per kW":42389031.4429621473,
         "FVOPS per Energy per Iteration":42636.6437515493,
-        "FVOPS per Node":237378576.0805880129
+        "FVOPS per Node":237378576.0805880129,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -3417,7 +3567,9 @@
         "FVOPS per Energy":33405.9109847989,
         "FVOPS per kW":37520934.6146838516,
         "FVOPS per Energy per Iteration":33405.9109847989,
-        "FVOPS per Node":210117233.8422295749
+        "FVOPS per Node":210117233.8422295749,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -3462,7 +3614,9 @@
         "FVOPS per Energy":53781.0033316488,
         "FVOPS per kW":47607616.4117171243,
         "FVOPS per Energy per Iteration":53781.0033316488,
-        "FVOPS per Node":266602651.905615896
+        "FVOPS per Node":266602651.905615896,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Cineca",
@@ -3507,7 +3661,9 @@
         "FVOPS per Energy":38280.5668232413,
         "FVOPS per kW":56802331.9764154851,
         "FVOPS per Energy per Iteration":38280.5668232413,
-        "FVOPS per Node":159046529.5339633524
+        "FVOPS per Node":159046529.5339633524,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3552,7 +3708,9 @@
         "FVOPS per Energy":686.3856540504,
         "FVOPS per kW":8925792.0330108106,
         "FVOPS per Energy per Iteration":686.3856540504,
-        "FVOPS per Node":4998443.5384860542
+        "FVOPS per Node":4998443.5384860542,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3597,7 +3755,9 @@
         "FVOPS per Energy":5201.8145221702,
         "FVOPS per kW":24571976.7774571739,
         "FVOPS per Energy per Iteration":5201.8145221702,
-        "FVOPS per Node":13760306.9953760169
+        "FVOPS per Node":13760306.9953760169,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3642,7 +3802,9 @@
         "FVOPS per Energy":1427.5647656594,
         "FVOPS per kW":9102183.3020524289,
         "FVOPS per Energy per Iteration":1427.5647656594,
-        "FVOPS per Node":5097222.6491493601
+        "FVOPS per Node":5097222.6491493601,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3687,7 +3849,9 @@
         "FVOPS per Energy":12043.0011714013,
         "FVOPS per kW":26437174.1138489805,
         "FVOPS per Energy per Iteration":12043.0011714013,
-        "FVOPS per Node":14804817.5037554279
+        "FVOPS per Node":14804817.5037554279,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3732,7 +3896,9 @@
         "FVOPS per Energy":3525.5422013133,
         "FVOPS per kW":10114528.1624416206,
         "FVOPS per Energy per Iteration":3525.5422013133,
-        "FVOPS per Node":5664135.7709673075
+        "FVOPS per Node":5664135.7709673075,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3777,7 +3943,9 @@
         "FVOPS per Energy":33001.2324197618,
         "FVOPS per kW":30945517.4119754247,
         "FVOPS per Energy per Iteration":33001.2324197618,
-        "FVOPS per Node":17329489.7507062368
+        "FVOPS per Node":17329489.7507062368,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3822,7 +3990,9 @@
         "FVOPS per Energy":7505.8790659057,
         "FVOPS per kW":10435624.7169494927,
         "FVOPS per Energy per Iteration":7505.8790659057,
-        "FVOPS per Node":5843949.8414917151
+        "FVOPS per Node":5843949.8414917151,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3867,7 +4037,9 @@
         "FVOPS per Energy":93279.3624778165,
         "FVOPS per kW":36788362.3905581608,
         "FVOPS per Energy per Iteration":93279.3624778165,
-        "FVOPS per Node":20601482.9387125708
+        "FVOPS per Node":20601482.9387125708,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3912,7 +4084,9 @@
         "FVOPS per Energy":19158.9545773091,
         "FVOPS per kW":11789315.1511320136,
         "FVOPS per Energy per Iteration":19158.9545773091,
-        "FVOPS per Node":6602016.4846339272
+        "FVOPS per Node":6602016.4846339272,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -3957,7 +4131,9 @@
         "FVOPS per Energy":231480.8467977204,
         "FVOPS per kW":40978891.3456789702,
         "FVOPS per Energy per Iteration":231480.8467977204,
-        "FVOPS per Node":22948179.1535802223
+        "FVOPS per Node":22948179.1535802223,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4002,7 +4178,9 @@
         "FVOPS per Energy":31033.3851980946,
         "FVOPS per kW":10609679.1795131899,
         "FVOPS per Energy per Iteration":31033.3851980946,
-        "FVOPS per Node":5941420.3405273864
+        "FVOPS per Node":5941420.3405273864,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4047,7 +4225,9 @@
         "FVOPS per Energy":378289.6819738491,
         "FVOPS per kW":37042468.7860670462,
         "FVOPS per Energy per Iteration":378289.6819738491,
-        "FVOPS per Node":20743782.520197548
+        "FVOPS per Node":20743782.520197548,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4092,7 +4272,9 @@
         "FVOPS per Energy":22782.2497587279,
         "FVOPS per kW":6427927.683610687,
         "FVOPS per Energy per Iteration":22782.2497587279,
-        "FVOPS per Node":3599639.5028219847
+        "FVOPS per Node":3599639.5028219847,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4137,7 +4319,9 @@
         "FVOPS per Energy":321441.4219699323,
         "FVOPS per kW":24144799.2103376649,
         "FVOPS per Energy per Iteration":321441.4219699323,
-        "FVOPS per Node":13521087.5577890929
+        "FVOPS per Node":13521087.5577890929,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"TUM",
@@ -4182,7 +4366,9 @@
         "FVOPS per Energy":1620.1240490514,
         "FVOPS per kW":15732735.0431641173,
         "FVOPS per Energy per Iteration":1620.1240490514,
-        "FVOPS per Node":11327569.2310781647
+        "FVOPS per Node":11327569.2310781647,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4227,7 +4413,9 @@
         "FVOPS per Energy":30.8729443564,
         "FVOPS per kW":3607040.4538757345,
         "FVOPS per Energy per Iteration":30.8729443564,
-        "FVOPS per Node":2019942.6541704114
+        "FVOPS per Node":2019942.6541704114,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4272,7 +4460,9 @@
         "FVOPS per Energy":40.1125548632,
         "FVOPS per kW":4586589.8607212016,
         "FVOPS per Energy per Iteration":40.1125548632,
-        "FVOPS per Node":2063965.4373245409
+        "FVOPS per Node":2063965.4373245409,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4317,7 +4507,9 @@
         "FVOPS per Energy":135.4823099197,
         "FVOPS per kW":5960408.7426063148,
         "FVOPS per Energy per Iteration":135.4823099197,
-        "FVOPS per Node":2682183.9341728417
+        "FVOPS per Node":2682183.9341728417,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4362,7 +4554,9 @@
         "FVOPS per Energy":59.4390351396,
         "FVOPS per kW":3947940.7139750412,
         "FVOPS per Energy per Iteration":59.4390351396,
-        "FVOPS per Node":1776573.3212887684
+        "FVOPS per Node":1776573.3212887684,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4407,7 +4601,9 @@
         "FVOPS per Energy":121.6756199073,
         "FVOPS per kW":3994123.8990772897,
         "FVOPS per Energy per Iteration":121.6756199073,
-        "FVOPS per Node":1797355.7545847804
+        "FVOPS per Node":1797355.7545847804,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4452,7 +4648,9 @@
         "FVOPS per Energy":121.3911134123,
         "FVOPS per kW":2523150.7096094089,
         "FVOPS per Energy per Iteration":121.3911134123,
-        "FVOPS per Node":1135417.819324234
+        "FVOPS per Node":1135417.819324234,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4497,7 +4695,9 @@
         "FVOPS per Energy":160.3191820518,
         "FVOPS per kW":2543143.1848881259,
         "FVOPS per Energy per Iteration":160.3191820518,
-        "FVOPS per Node":1144414.4331996567
+        "FVOPS per Node":1144414.4331996567,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4542,7 +4742,9 @@
         "FVOPS per Energy":963.5422412882,
         "FVOPS per kW":12132923.9023012817,
         "FVOPS per Energy per Iteration":963.5422412882,
-        "FVOPS per Node":8735705.209656924
+        "FVOPS per Node":8735705.209656924,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -4587,7 +4789,9 @@
         "FVOPS per Energy":28975.3946841643,
         "FVOPS per kW":34944325.9891021103,
         "FVOPS per Energy per Iteration":28975.3946841643,
-        "FVOPS per Node":195688225.5389718115
+        "FVOPS per Node":195688225.5389718115,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -4632,7 +4836,9 @@
         "FVOPS per Energy":16100.5952089868,
         "FVOPS per kW":18419080.9190809205,
         "FVOPS per Energy per Iteration":16100.5952089868,
-        "FVOPS per Node":103146853.1468531489
+        "FVOPS per Node":103146853.1468531489,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -4677,7 +4883,9 @@
         "FVOPS per Energy":8164.0813188993,
         "FVOPS per kW":9274396.3782696184,
         "FVOPS per Energy per Iteration":8164.0813188993,
-        "FVOPS per Node":51936619.7183098644
+        "FVOPS per Node":51936619.7183098644,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4722,7 +4930,9 @@
         "FVOPS per Energy":137.901818131,
         "FVOPS per kW":4000807.5476157647,
         "FVOPS per Energy per Iteration":137.901818131,
-        "FVOPS per Node":2240452.2266648281
+        "FVOPS per Node":2240452.2266648281,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -4767,7 +4977,9 @@
         "FVOPS per Energy":40904.6186016844,
         "FVOPS per kW":45224229.4581590667,
         "FVOPS per Energy per Iteration":40904.6186016844,
-        "FVOPS per Node":99493304.8079499453
+        "FVOPS per Node":99493304.8079499453,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4812,7 +5024,9 @@
         "FVOPS per Energy":110.8139740677,
         "FVOPS per kW":5204599.9200384188,
         "FVOPS per Energy per Iteration":110.8139740677,
-        "FVOPS per Node":2342069.9640172888
+        "FVOPS per Node":2342069.9640172888,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4857,7 +5071,9 @@
         "FVOPS per Energy":134.7672730456,
         "FVOPS per kW":4058516.4277676316,
         "FVOPS per Energy per Iteration":134.7672730456,
-        "FVOPS per Node":1826332.3924954343
+        "FVOPS per Node":1826332.3924954343,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -4902,7 +5118,9 @@
         "FVOPS per Energy":292.4717933223,
         "FVOPS per kW":4227679.7724739611,
         "FVOPS per Energy per Iteration":292.4717933223,
-        "FVOPS per Node":1902455.8976132825
+        "FVOPS per Node":1902455.8976132825,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4947,7 +5165,9 @@
         "FVOPS per Energy":599.9859883871,
         "FVOPS per kW":7950648.3692076951,
         "FVOPS per Energy per Iteration":599.9859883871,
-        "FVOPS per Node":4452363.0867563095
+        "FVOPS per Node":4452363.0867563095,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -4992,7 +5212,9 @@
         "FVOPS per Energy":5446.3014400483,
         "FVOPS per kW":23954263.8973155506,
         "FVOPS per Energy per Iteration":5446.3014400483,
-        "FVOPS per Node":13414387.7824967075
+        "FVOPS per Node":13414387.7824967075,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5037,7 +5259,9 @@
         "FVOPS per Energy":1111.1806966659,
         "FVOPS per kW":7650843.8553771423,
         "FVOPS per Energy per Iteration":1111.1806966659,
-        "FVOPS per Node":4284472.5590111995
+        "FVOPS per Node":4284472.5590111995,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5082,7 +5306,9 @@
         "FVOPS per Energy":12687.5908722953,
         "FVOPS per kW":25852739.9326009825,
         "FVOPS per Energy per Iteration":12687.5908722953,
-        "FVOPS per Node":14477534.3622565493
+        "FVOPS per Node":14477534.3622565493,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5127,7 +5353,9 @@
         "FVOPS per Energy":2658.4437513012,
         "FVOPS per kW":8367885.6063452261,
         "FVOPS per Energy per Iteration":2658.4437513012,
-        "FVOPS per Node":4686015.9395533269
+        "FVOPS per Node":4686015.9395533269,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5172,7 +5400,9 @@
         "FVOPS per Energy":33720.2694245951,
         "FVOPS per kW":29802144.3982996419,
         "FVOPS per Energy per Iteration":33720.2694245951,
-        "FVOPS per Node":16689200.863047801
+        "FVOPS per Node":16689200.863047801,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5217,7 +5447,9 @@
         "FVOPS per Energy":4251.3086935421,
         "FVOPS per kW":7482527.4586476162,
         "FVOPS per Energy per Iteration":4251.3086935421,
-        "FVOPS per Node":4190215.376842665
+        "FVOPS per Node":4190215.376842665,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5262,7 +5494,9 @@
         "FVOPS per Energy":91358.8564165689,
         "FVOPS per kW":34686647.4431186095,
         "FVOPS per Energy per Iteration":91358.8564165689,
-        "FVOPS per Node":19424522.5681464225
+        "FVOPS per Node":19424522.5681464225,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5307,7 +5541,9 @@
         "FVOPS per Energy":9510.8686201071,
         "FVOPS per kW":7913745.7309423685,
         "FVOPS per Energy per Iteration":9510.8686201071,
-        "FVOPS per Node":4431697.6093277261
+        "FVOPS per Node":4431697.6093277261,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5352,7 +5588,9 @@
         "FVOPS per Energy":169149.1890415886,
         "FVOPS per kW":33373900.0511856899,
         "FVOPS per Energy per Iteration":169149.1890415886,
-        "FVOPS per Node":18689384.0286639854
+        "FVOPS per Node":18689384.0286639854,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5397,7 +5635,9 @@
         "FVOPS per Energy":572.8019493537,
         "FVOPS per kW":8153891.1293922542,
         "FVOPS per Energy per Iteration":572.8019493537,
-        "FVOPS per Node":4566179.0324596623
+        "FVOPS per Node":4566179.0324596623,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5442,7 +5682,9 @@
         "FVOPS per Energy":1221.3729400786,
         "FVOPS per kW":8419219.1435252447,
         "FVOPS per Energy per Iteration":1221.3729400786,
-        "FVOPS per Node":4714762.7203741372
+        "FVOPS per Node":4714762.7203741372,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5487,7 +5729,9 @@
         "FVOPS per Energy":2897.3613782777,
         "FVOPS per kW":9169253.9808914568,
         "FVOPS per Energy per Iteration":2897.3613782777,
-        "FVOPS per Node":5134782.2292992165
+        "FVOPS per Node":5134782.2292992165,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5532,7 +5776,9 @@
         "FVOPS per Energy":6641.4739665151,
         "FVOPS per kW":9816347.1510113943,
         "FVOPS per Energy per Iteration":6641.4739665151,
-        "FVOPS per Node":5497154.4045663802
+        "FVOPS per Node":5497154.4045663802,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5577,7 +5823,9 @@
         "FVOPS per Energy":17086.2393382852,
         "FVOPS per kW":11133351.3847698271,
         "FVOPS per Energy per Iteration":17086.2393382852,
-        "FVOPS per Node":6234676.7754711034
+        "FVOPS per Node":6234676.7754711034,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5622,7 +5870,9 @@
         "FVOPS per Energy":28997.6577894434,
         "FVOPS per kW":10255790.3840435911,
         "FVOPS per Energy per Iteration":28997.6577894434,
-        "FVOPS per Node":5743242.6150644114
+        "FVOPS per Node":5743242.6150644114,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5667,7 +5917,9 @@
         "FVOPS per Energy":24362.0492952052,
         "FVOPS per kW":6647059.8112789178,
         "FVOPS per Energy per Iteration":24362.0492952052,
-        "FVOPS per Node":3722353.4943161942
+        "FVOPS per Node":3722353.4943161942,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5712,7 +5964,9 @@
         "FVOPS per Energy":2167.3766224106,
         "FVOPS per kW":11215402.3738678154,
         "FVOPS per Energy per Iteration":2167.3766224106,
-        "FVOPS per Node":1570156.332341494
+        "FVOPS per Node":1570156.332341494,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5757,7 +6011,9 @@
         "FVOPS per Energy":2928.6752321588,
         "FVOPS per kW":9218670.1592262201,
         "FVOPS per Energy per Iteration":2928.6752321588,
-        "FVOPS per Node":1290613.8222916708
+        "FVOPS per Node":1290613.8222916708,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5802,7 +6058,9 @@
         "FVOPS per Energy":2979.347952747,
         "FVOPS per kW":6574735.4802941568,
         "FVOPS per Energy per Iteration":2979.347952747,
-        "FVOPS per Node":920462.967241182
+        "FVOPS per Node":920462.967241182,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Wikki GmbH",
@@ -5847,7 +6105,9 @@
         "FVOPS per Energy":1605.0643563593,
         "FVOPS per kW":3412313.2988460348,
         "FVOPS per Energy per Iteration":1605.0643563593,
-        "FVOPS per Node":477723.8618384449
+        "FVOPS per Node":477723.8618384449,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -5892,7 +6152,9 @@
         "FVOPS per Energy":61779.4082517619,
         "FVOPS per kW":42723537.9895849898,
         "FVOPS per Energy per Iteration":61779.4082517619,
-        "FVOPS per Node":93991783.5770869702
+        "FVOPS per Node":93991783.5770869702,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -5937,7 +6199,9 @@
         "FVOPS per Energy":717.1067504841,
         "FVOPS per kW":16261399.516678134,
         "FVOPS per Energy per Iteration":717.1067504841,
-        "FVOPS per Node":10407295.6906740051
+        "FVOPS per Node":10407295.6906740051,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -5982,7 +6246,9 @@
         "FVOPS per Energy":13772.0909636014,
         "FVOPS per kW":31538088.3066472597,
         "FVOPS per Energy per Iteration":13772.0909636014,
-        "FVOPS per Node":28384279.4759825319
+        "FVOPS per Node":28384279.4759825319,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Uni Stuttgart - HLRS",
@@ -6027,7 +6293,9 @@
         "FVOPS per Energy":1201.5357226657,
         "FVOPS per kW":14370593.3187593278,
         "FVOPS per Energy per Iteration":1201.5357226657,
-        "FVOPS per Node":9197179.7240059692
+        "FVOPS per Node":9197179.7240059692,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"TUM",
@@ -6072,7 +6340,9 @@
         "FVOPS per Energy":3413.4459654876,
         "FVOPS per kW":17554438.6503454037,
         "FVOPS per Energy per Iteration":3413.4459654876,
-        "FVOPS per Node":12639195.8282486908
+        "FVOPS per Node":12639195.8282486908,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Engys",
@@ -6117,7 +6387,9 @@
         "FVOPS per Energy":68408.1765162846,
         "FVOPS per kW":75933075.9330759346,
         "FVOPS per Energy per Iteration":68408.1765162846,
-        "FVOPS per Node":212612612.6126126051
+        "FVOPS per Node":212612612.6126126051,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"Engys",
@@ -6162,7 +6434,9 @@
         "FVOPS per Energy":74920.6349206349,
         "FVOPS per kW":56190476.190476194,
         "FVOPS per Energy per Iteration":74920.6349206349,
-        "FVOPS per Node":314666666.6666666865
+        "FVOPS per Node":314666666.6666666865,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6207,7 +6481,9 @@
         "FVOPS per Energy":93.1806831212,
         "FVOPS per kW":3668709.8558479236,
         "FVOPS per Energy per Iteration":93.1806831212,
-        "FVOPS per Node":1650919.4351315657
+        "FVOPS per Node":1650919.4351315657,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6252,7 +6528,9 @@
         "FVOPS per Energy":308.1606639086,
         "FVOPS per kW":4717631.6037770091,
         "FVOPS per Energy per Iteration":308.1606639086,
-        "FVOPS per Node":2122934.2216996541
+        "FVOPS per Node":2122934.2216996541,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6297,7 +6575,9 @@
         "FVOPS per Energy":639.5131602368,
         "FVOPS per kW":6796106.3538366621,
         "FVOPS per Energy per Iteration":639.5131602368,
-        "FVOPS per Node":3058247.8592264983
+        "FVOPS per Node":3058247.8592264983,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6342,7 +6622,9 @@
         "FVOPS per Energy":630.9907413758,
         "FVOPS per kW":4773444.9585077474,
         "FVOPS per Energy per Iteration":630.9907413758,
-        "FVOPS per Node":2148050.2313284865
+        "FVOPS per Node":2148050.2313284865,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6387,7 +6669,9 @@
         "FVOPS per Energy":747.248099079,
         "FVOPS per kW":4241380.2103724582,
         "FVOPS per Energy per Iteration":747.248099079,
-        "FVOPS per Node":1908621.0946676063
+        "FVOPS per Node":1908621.0946676063,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6432,7 +6716,9 @@
         "FVOPS per Energy":2954.7036117715,
         "FVOPS per kW":7304027.3282991741,
         "FVOPS per Energy per Iteration":2954.7036117715,
-        "FVOPS per Node":3286812.297734628
+        "FVOPS per Node":3286812.297734628,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6477,7 +6763,9 @@
         "FVOPS per Energy":3450.5600046545,
         "FVOPS per kW":7059845.7695231894,
         "FVOPS per Energy per Iteration":3450.5600046545,
-        "FVOPS per Node":3176930.5962854354
+        "FVOPS per Node":3176930.5962854354,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"KIT\/TUM",
@@ -6522,7 +6810,9 @@
         "FVOPS per Energy":760.1667108485,
         "FVOPS per kW":18941982.1433894187,
         "FVOPS per Energy per Iteration":760.1667108485,
-        "FVOPS per Node":9470991.0716947094
+        "FVOPS per Node":9470991.0716947094,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"NVIDIA",
@@ -6567,7 +6857,9 @@
         "FVOPS per Energy":4365.8226384553,
         "FVOPS per kW":33835125.4480286762,
         "FVOPS per Energy per Iteration":4365.8226384553,
-        "FVOPS per Node":30451612.9032258056
+        "FVOPS per Node":30451612.9032258056,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6612,7 +6904,9 @@
         "FVOPS per Energy":2180.5030902812,
         "FVOPS per kW":19841923.97063151,
         "FVOPS per Energy per Iteration":2180.5030902812,
-        "FVOPS per Node":7143092.6294273436
+        "FVOPS per Node":7143092.6294273436,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     },
     {
         "Contributor Affiliation":"UniBw M\u00fcnchen",
@@ -6657,6 +6951,8 @@
         "FVOPS per Energy":1863.9688388457,
         "FVOPS per kW":17403877.048302453,
         "FVOPS per Energy per Iteration":1863.9688388457,
-        "FVOPS per Node":6961550.8193209814
+        "FVOPS per Node":6961550.8193209814,
+        "OHC":2,
+        "Submission Date":"2026-06-29"
     }
 ]

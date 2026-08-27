@@ -7,7 +7,7 @@ This module is the one place that knows what a valid submission looks like.
 before they are appended to the global ``data/data.json``.
 
 The field list mirrors the columns of ``data/data_OHC1.json`` -- the shape the
-Overview notebook expects -- and splits them in three:
+Overview notebook expects -- and splits them in four:
 
 ``REQUIRED``
     Raw, measured or declared quantities that nothing else can supply.
@@ -16,6 +16,12 @@ Overview notebook expects -- and splits them in three:
     details that not every site publishes, pre-processing timings that not
     every submission recorded).  ``null``, ``"N/A"``, ``"-"`` and ``"/"`` are
     all accepted and normalised to a canonical value.
+``SUPPLIED``
+    Fields a submission need not carry because the merge supplies them: ``OHC``
+    from the current iteration and ``Submission Date`` from the merge time (see
+    ``append_submissions.py``).  A submission *may* still carry them, in which
+    case the submitted value is validated and kept; when absent they are left
+    out here and filled on append, so the finished dataset always has both.
 ``DERIVED``
     Everything computable from the required fields.  A submission may omit
     these -- they are filled in on append.  When a submission *does* carry
@@ -36,6 +42,7 @@ import os
 
 REQUIRED = "required"
 OPTIONAL = "optional"
+SUPPLIED = "supplied"
 DERIVED = "derived"
 
 # Nominal cell count per mesh resolution, matching MESH_CELLS in benchmark.py
@@ -92,10 +99,13 @@ FIELDS = [
           doc="Name of the source result file this record was harvested from."),
     Field("Track", "str", REQUIRED, closed=True,
           enum=["Hardware Track", "Software Track"]),
-    Field("OHC", "int", REQUIRED, minimum=1,
-          doc="Round of the challenge this result was submitted to."),
-    Field("Submission Date", "date", REQUIRED,
-          doc="ISO date, YYYY-MM-DD. For the published rounds this is the "
+    Field("OHC", "int", SUPPLIED, minimum=1,
+          doc="Round of the challenge this result was submitted to. May be "
+              "omitted: the merge stamps the current iteration on a submission "
+              "that does not carry it."),
+    Field("Submission Date", "date", SUPPLIED,
+          doc="ISO date, YYYY-MM-DD. May be omitted: the merge stamps the date "
+              "the pull request was merged. For the published rounds it is the "
               "workshop the results were presented at, since the spreadsheets "
               "did not record a date."),
     Field("Software Optimization Category", "str", REQUIRED,
@@ -536,14 +546,21 @@ def backfill(raw, where):
     return record, issues
 
 
-def validate_record(raw, where, known=None):
+def validate_record(raw, where, known=None, supplied=None):
     """Check one raw record.  Returns (normalised record, issues).
 
     The normalised record carries every field in FIELD_ORDER: required values
     as submitted, absent optionals as their canonical placeholder, and derived
     values either as submitted or recomputed.
+
+    ``supplied`` maps a SUPPLIED field name (OHC, Submission Date) to the value
+    the merge fills in when the submission omits it -- the current iteration and
+    the merge date.  A SUPPLIED field the submission omits and ``supplied`` does
+    not cover is simply left absent here: it is not an error at validation time,
+    but ``append_submissions.py`` refuses to append a record still missing one.
     """
     known = known or {}
+    supplied = supplied or {}
     raw, issues = backfill(raw, where)
     record = {}
 
@@ -565,6 +582,12 @@ def validate_record(raw, where, known=None):
                                        else "reported as %s" % json.dumps(value))))
             elif field.role == OPTIONAL:
                 record[field.name] = field.default
+            elif field.role == SUPPLIED and not is_missing(supplied.get(field.name)):
+                filled, field_issues = check_field(
+                    field, supplied[field.name], "%s (supplied)" % place)
+                issues.extend(field_issues)
+                if not any(i.severity == "error" for i in field_issues):
+                    record[field.name] = filled
             continue
 
         checked = field
