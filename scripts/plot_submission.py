@@ -7,7 +7,8 @@ Draws time-to-solution against energy-to-solution on log-log axes -- the
 ``TTS_ETS`` scatter of the challenge notebooks -- with everything already in
 data/data.json as a grey cloud and the submitted runs in red on top, so a pull
 request shows at a glance whether a new machine lands inside the field or
-extends it.
+extends it.  Marker shape carries the track -- a circle for the Hardware Track,
+a five-pointed star for the Software Track -- so the two never blur together.
 
 Both axes are normalised quantities, not measurements (see ohc_schema.py):
 
@@ -128,12 +129,55 @@ def pareto_front(points):
     return front
 
 
+# The two tracks are told apart by marker shape, so a hardware run and a
+# software run at the same point never merge into one blob: circle for hardware,
+# five-pointed star for software.
+SOFTWARE_TRACK = "Software Track"
+
+
+def star_path(cx, cy, r_outer, r_inner=None):
+    """SVG path `d` for a five-pointed star centred at (cx, cy), point up."""
+    if r_inner is None:
+        r_inner = r_outer * 0.42
+    steps = []
+    for k in range(10):
+        r = r_outer if k % 2 == 0 else r_inner
+        angle = -math.pi / 2 + k * math.pi / 5
+        steps.append("%s%.1f,%.1f" % ("M" if k == 0 else "L",
+                                      cx + r * math.cos(angle),
+                                      cy + r * math.sin(angle)))
+    return " ".join(steps) + " Z"
+
+
+def existing_marker(cx, cy, track):
+    """An open grey marker for a published run, shaped by its track."""
+    if track == SOFTWARE_TRACK:
+        return ('<path d="%s" fill="none" stroke="%s" stroke-width="1.3" '
+                'stroke-linejoin="round" opacity="0.75"/>'
+                % (star_path(cx, cy, 5.0, 2.1), INK_EXISTING))
+    return ('<circle cx="%.1f" cy="%.1f" r="3.2" fill="none" stroke="%s" '
+            'stroke-width="1.3" opacity="0.75"/>' % (cx, cy, INK_EXISTING))
+
+
+def new_marker(cx, cy, track):
+    """A filled red marker with a white halo for a submitted run, by track."""
+    if track == SOFTWARE_TRACK:
+        return ('<path d="%s" fill="%s" stroke="%s" stroke-width="1.6" '
+                'stroke-linejoin="round"/><path d="%s" fill="%s" '
+                'stroke-linejoin="round"/>'
+                % (star_path(cx, cy, 7.4, 3.1), SURFACE, INK_NEW,
+                   star_path(cx, cy, 4.8, 2.0), INK_NEW))
+    return ('<circle cx="%.1f" cy="%.1f" r="5.4" fill="%s" stroke="%s" '
+            'stroke-width="1.6"/><circle cx="%.1f" cy="%.1f" r="2.4" fill="%s"/>'
+            % (cx, cy, SURFACE, INK_NEW, cx, cy, INK_NEW))
+
+
 # --------------------------------------------------------------------------- #
 # Data
 # --------------------------------------------------------------------------- #
 
 def points_of(records, meshes=None):
-    """(energy, time, mesh) for every record that has both coordinates."""
+    """(energy, time, mesh, track) for every record that has both coordinates."""
     points = []
     for record in records:
         mesh = record.get("Mesh")
@@ -142,7 +186,7 @@ def points_of(records, meshes=None):
         x = schema.coerce_number(record.get(X_FIELD))
         y = schema.coerce_number(record.get(Y_FIELD))
         if x and y and x > 0 and y > 0:
-            points.append((x, y, mesh))
+            points.append((x, y, mesh, record.get("Track")))
     return points
 
 
@@ -188,10 +232,10 @@ def render(existing, new, title, subtitle, join=True):
     # Split both clouds by mesh once, so each panel only draws its own runs.
     existing_by_mesh = {m: [] for m in MESHES}
     new_by_mesh = {m: [] for m in MESHES}
-    for x, y, mesh in existing:
-        existing_by_mesh.setdefault(mesh, []).append((x, y))
-    for x, y, mesh in new:
-        new_by_mesh.setdefault(mesh, []).append((x, y))
+    for x, y, mesh, track in existing:
+        existing_by_mesh.setdefault(mesh, []).append((x, y, track))
+    for x, y, mesh, track in new:
+        new_by_mesh.setdefault(mesh, []).append((x, y, track))
 
     x_ticks = log_ticks(x_lo, x_hi)
     y_ticks = log_ticks(y_lo, y_hi)
@@ -225,12 +269,10 @@ def render(existing, new, title, subtitle, join=True):
             % (x0 + w / 2.0, y0 - 12, INK_AXIS, mesh))
 
         # --- the field it is being placed against ------------------------- #
-        for x, y in panel_existing:
-            add('<circle cx="%.1f" cy="%.1f" r="3.2" fill="none" stroke="%s" '
-                'stroke-width="1.3" opacity="0.75"/>'
-                % (sx(x, x0), sy(y), INK_EXISTING))
+        for x, y, track in panel_existing:
+            add(existing_marker(sx(x, x0), sy(y), track))
 
-        front = pareto_front(panel_existing)
+        front = pareto_front([(x, y) for x, y, _ in panel_existing])
         any_front = any_front or len(front) > 1
         if len(front) > 1:
             path = " ".join("%s%.1f,%.1f" % ("M" if i == 0 else "L", sx(x, x0), sy(y))
@@ -239,16 +281,15 @@ def render(existing, new, title, subtitle, join=True):
                 'stroke-dasharray="5 4" opacity="0.85"/>' % (path, INK_PARETO))
 
         # --- the submission ----------------------------------------------- #
-        for x, y in panel_new:
-            add('<circle cx="%.1f" cy="%.1f" r="5.4" fill="%s" stroke="%s" '
-                'stroke-width="1.6"/>' % (sx(x, x0), sy(y), SURFACE, INK_NEW))
-            add('<circle cx="%.1f" cy="%.1f" r="2.4" fill="%s"/>'
-                % (sx(x, x0), sy(y), INK_NEW))
+        # A join line sits under the markers so the shapes stay on top.
         if join and len(panel_new) > 1:
             path = " ".join("%s%.1f,%.1f" % ("M" if i == 0 else "L", sx(x, x0), sy(y))
-                            for i, (x, y) in enumerate(sorted(panel_new)))
+                            for i, (x, y) in enumerate(sorted((px, py)
+                                                    for px, py, _ in panel_new)))
             add('<path d="%s" fill="none" stroke="%s" stroke-width="1.5" '
                 'opacity="0.55"/>' % (path, INK_NEW))
+        for x, y, track in panel_new:
+            add(new_marker(sx(x, x0), sy(y), track))
 
         if not panel_existing and not panel_new:
             add('<text x="%.1f" y="%.1f" font-size="12" text-anchor="middle" '
@@ -265,24 +306,51 @@ def render(existing, new, title, subtitle, join=True):
         % (y0 + h / 2.0, INK_AXIS, y0 + h / 2.0, "Time-To-Solution [h]"))
 
     # --- legend ------------------------------------------------------------ #
+    # Two encodings, so two groups: colour says new-vs-published, shape says
+    # which track.  A run is one colour and one shape at once.
     lx, ly = panel_x0(len(MESHES) - 1) + w + 26, y0 + 8
-    rows = [(INK_NEW, True, "this submission (%d)" % len(new)),
-            (INK_EXISTING, False, "already published (%d)" % len(existing))]
-    for index, (colour, filled, text) in enumerate(rows):
-        y = ly + index * 22
-        add('<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" stroke="%s" '
-            'stroke-width="1.5"/>'
-            % (lx + 6, y - 4, 5.0 if filled else 3.2,
-               colour if filled else "none", colour))
+    shown = existing + new
+    n_hw = sum(1 for p in shown if p[3] != SOFTWARE_TRACK)
+    n_sw = sum(1 for p in shown if p[3] == SOFTWARE_TRACK)
+
+    def caption(y, text):
+        add('<text x="%.1f" y="%.1f" font-size="10.5" font-weight="600" '
+            'letter-spacing="0.4" fill="%s">%s</text>'
+            % (lx, y, INK_PARETO, saxutils.escape(text)))
+
+    def label(y, text):
         add('<text x="%.1f" y="%.1f" font-size="12" fill="%s">%s</text>'
             % (lx + 20, y, INK_AXIS, saxutils.escape(text)))
+
+    y = ly
+    caption(y, "COLOUR")
+    y += 20
+    add('<circle cx="%.1f" cy="%.1f" r="5.0" fill="%s" stroke="%s" '
+        'stroke-width="1.5"/>' % (lx + 6, y - 4, INK_NEW, INK_NEW))
+    label(y, "this submission (%d)" % len(new))
+    y += 22
+    add('<circle cx="%.1f" cy="%.1f" r="3.2" fill="none" stroke="%s" '
+        'stroke-width="1.5"/>' % (lx + 6, y - 4, INK_EXISTING))
+    label(y, "already published (%d)" % len(existing))
+
+    y += 30
+    caption(y, "SYMBOL")
+    y += 20
+    add('<circle cx="%.1f" cy="%.1f" r="3.6" fill="none" stroke="%s" '
+        'stroke-width="1.5"/>' % (lx + 6, y - 4, INK_AXIS))
+    label(y, "Hardware Track (%d)" % n_hw)
+    y += 22
+    add('<path d="%s" fill="none" stroke="%s" stroke-width="1.5" '
+        'stroke-linejoin="round"/>'
+        % (star_path(lx + 6, y - 4, 6.0, 2.5), INK_AXIS))
+    label(y, "Software Track (%d)" % n_sw)
+
     if any_front:
-        y = ly + len(rows) * 22
+        y += 30
         add('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" '
             'stroke-width="1.4" stroke-dasharray="5 4"/>'
             % (lx, y - 4, lx + 13, y - 4, INK_PARETO))
-        add('<text x="%.1f" y="%.1f" font-size="12" fill="%s">%s</text>'
-            % (lx + 20, y, INK_AXIS, "Pareto front"))
+        label(y, "Pareto front")
         add('<text x="%.1f" y="%.1f" font-size="11" fill="%s">%s</text>'
             % (lx, y + 20, INK_PARETO, "lower left is better"))
 
