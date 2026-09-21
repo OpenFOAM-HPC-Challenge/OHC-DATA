@@ -1,0 +1,34 @@
+# OHC-1 submission metadata for benchmark.py --postProcess.
+# Everything that cannot be read out of the OpenFOAM logs lives here;
+# edit it once, then re-run --postProcess as often as you like.
+
+test_case: Test case 2a
+track: Hardware Track
+participant_id: FIXME
+lastname: Olenik
+firstname: Gregor
+affiliation: TUM
+email: gregor.olenik@tum.de
+legend_suffix: hkn2
+
+# --- hardware description (per node) ------------------------------
+server_type: CPU
+cpu: AMD EPYC 9655 96-Core
+gpu: "-"
+gpus_per_node: 0
+memory_type: DDR5-6000
+memory_capacity_per_node: 768GB
+last_level_cache: 384MB
+network_interconnect: 200 Gb/s per node (400 Gb/s shared per tray)
+network_topology: Fully non-blocking island
+storage_device: FIXME e.g. SSD
+storage_file_system: FIXME e.g. Lustre
+
+# Thermal design power of one *node* (all sockets + accelerators) in W.
+# Used to derive the per-simulation TDP and the energy to solution.
+# 2 sockets x 400 W = 800 W per node.
+tdp_per_node_w: 800
+
+machine: hk2n
+
+run: base
