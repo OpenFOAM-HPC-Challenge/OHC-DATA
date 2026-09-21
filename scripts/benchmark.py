@@ -39,6 +39,19 @@ name and can be turned off with ``--machine -``.  Harvesting a second machine
 with the same ``--suffix`` puts it beside the first, so one submission can
 cover several machines, each with the ``meta.yaml`` describing its hardware.
 
+``--run NAME`` adds one more level below the machine, for when the same
+machine is harvested more than once -- a different rank placement, a different
+decomposition, a re-run after a fix::
+
+    submissions/<YYYYMMDD>_<handle>/<machine>/<run>/
+        meta.yaml
+        OHC1_DrivAer_<machine>_<mesh>.json
+
+Each run folder carries its own ``meta.yaml``, so a configuration that changed
+the hardware description (cores used per node, threads per rank) is recorded
+where the numbers it produced are, instead of one file having to describe
+several runs.  Without ``--run`` the layout is unchanged.
+
 Examples
 --------
     # Prepare all meshes at 128 and 256 cores (does not submit)
@@ -1347,6 +1360,15 @@ def postprocess(args, workspace):
     if machine:
         outdir = os.path.join(outdir, machine)
 
+    # One machine may be harvested several times -- a different placement, a
+    # different decomposition, a re-run after a fix -- and those are separate
+    # results, not a second draft of the same one.  --run gives each its own
+    # folder below the machine, with its own meta.yaml, so nothing overwrites
+    # anything and each configuration is described where its numbers are.
+    run_name = sanitize(args.run) if args.run else ""
+    if run_name:
+        outdir = os.path.join(outdir, run_name)
+
     # The suffix also drives the OHC plot legend, so keep the two in sync when
     # it was overridden on the command line.
     meta["legend_suffix"] = suffix
@@ -1392,10 +1414,13 @@ def postprocess(args, workspace):
         os.makedirs(outdir, exist_ok=True)
         if meta_yaml is None:
             # The hardware behind the numbers belongs next to them: one
-            # meta.yaml per machine folder, whichever meshes end up in it.
+            # meta.yaml per folder, whichever meshes end up in it -- per
+            # machine, or per run when --run split the machine further.
+            updates = {"legend_suffix": suffix, "machine": machine or "-"}
+            if run_name:
+                updates["run"] = run_name
             meta_yaml = write_meta_yaml(
-                os.path.join(outdir, "meta.yaml"), meta_path,
-                {"legend_suffix": suffix, "machine": machine or "-"})
+                os.path.join(outdir, "meta.yaml"), meta_path, updates)
             print("  -> %s" % display_path(meta_yaml, workspace))
         if args.submission_format in ("json", "both"):
             path = write_json_submission(outdir, mesh, meta, runs, machine)
@@ -1412,10 +1437,16 @@ def postprocess(args, workspace):
         return
 
     print("\nwrote %d submission file(s) under %s" % (len(written), outdir))
-    if machine:
+    if machine and run_name:
+        print("They describe run '%s' on machine '%s'.  Harvest another "
+              "configuration with the same --suffix and --machine but a "
+              "different --run to add it beside this one."
+              % (run_name, machine))
+    elif machine:
         print("They describe machine '%s'.  Harvest another machine's "
               "workspace with the same --suffix to add it to this submission "
-              "as a folder of its own." % machine)
+              "as a folder of its own.  Use --run to keep several harvests of "
+              "this machine apart." % machine)
     if parent == repo_submissions_dir():
         print("They are already inside this checkout's submissions/ folder, "
               "so review them and commit them for the pull request.  "
@@ -1680,6 +1711,13 @@ examples:
   # A second machine into the same submission: same handle, own folder
   ./benchmark.py --postProcess --suffix tuned --machine horeka \\
                  --workspace /scratch/$USER/occDrivAer-horeka
+
+  # Two configurations of one machine, side by side, each with its own
+  # meta.yaml: submissions/<YYYYMMDD>_tuned/horeka/{l3,multilevel}/
+  ./benchmark.py --postProcess --suffix tuned --machine horeka --run l3 \\
+                 --workspace /scratch/$USER/occDrivAer-l3
+  ./benchmark.py --postProcess --suffix tuned --machine horeka \\
+                 --run multilevel --workspace /scratch/$USER/occDrivAer-ml
 """
 
 
@@ -1807,7 +1845,8 @@ def build_parser():
                         "(default: the submissions/ folder of this OHC-DATA "
                         "checkout, or <workspace>/submissions when the script "
                         "runs outside one). The files themselves land in a "
-                        "<YYYYMMDD>_<suffix> subdirectory of it")
+                        "<YYYYMMDD>_<suffix>/<machine>[/<run>] subdirectory "
+                        "of it")
     # --sufix is accepted as an alias so the spelling used on the command line
     # does not matter.
     g.add_argument("--suffix", "--sufix", dest="suffix", metavar="NAME",
@@ -1823,6 +1862,14 @@ def build_parser():
                         "LMOD_SYSTEM_NAME, OHC_MACHINE) falling back to the "
                         "short hostname. Pass '-' to put the files straight "
                         "in the dated directory")
+    g.add_argument("--run", metavar="NAME",
+                   help="run folder written inside the machine directory, for "
+                        "harvesting the same machine more than once -- a "
+                        "different placement or decomposition, or a re-run "
+                        "after a fix. Each run folder gets its own meta.yaml, "
+                        "so a configuration that changed the hardware "
+                        "description is recorded with the numbers it "
+                        "produced. Default: none, and the layout is unchanged")
     g.add_argument("--avg-window", type=int, default=200, dest="avg_window",
                    metavar="N",
                    help="number of trailing iterations averaged for the "

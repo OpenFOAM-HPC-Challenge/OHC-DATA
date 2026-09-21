@@ -19,9 +19,16 @@ submissions/
     hawk/                             <- another machine, same submission
       meta.yaml
       OHC1_DrivAer_hawk_65M.json
+    hlrs/                             <- a machine harvested twice
+      l3/                             <- one run: a configuration of it
+        meta.yaml
+        OHC1_DrivAer_hlrs_65M.json
+      multilevel/                     <- another, beside it
+        meta.yaml
+        OHC1_DrivAer_hlrs_65M.json
 ```
 
-Three things about that shape are worth spelling out, because each of them was
+Four things about that shape are worth spelling out, because each of them was
 a choice:
 
 **The machine folder is optional.**  A submission that covers a single machine
@@ -30,13 +37,25 @@ level entirely.  It exists so that *several* machines can share one submission:
 one folder each, side by side, in one pull request.  Nothing is read out of the
 folder names -- they order the directory for humans, and that is all.
 
+**The run folder is optional too.**  A machine harvested once needs no run
+level, and most submissions will not have one.  It exists for the case where
+the *same* machine is measured more than once and the results are separate
+findings rather than a second draft: a different rank placement, a different
+decomposition, a re-run after a fix.  `benchmark.py --postProcess --run NAME`
+writes one, and each run folder carries its own `meta.yaml` -- which matters
+when the configuration changed something the hardware description records,
+such as the cores actually used per node.  Files in different run folders may
+share a name; nothing is read out of the folder names here either.
+
 **Every machine carries a `meta.yaml`.**  It describes the hardware the numbers
 next to it were measured on -- CPU, memory, interconnect, node TDP -- in the
 contributor's own words.  `benchmark.py --postProcess` writes it as a copy of
 the `meta.yaml` in the workspace it was driven with, comments and all; for a
 hand-assembled submission, copy [`meta.yaml.template`](meta.yaml.template) and
-fill it in.  A result file with no `meta.yaml` in its folder, nor in the
-submission folder above it, is rejected.
+fill it in.  The nearest one wins: a run folder's `meta.yaml` describes that
+run, and a machine's describes every run below it that has none of its own.  A
+result file with no `meta.yaml` in its folder, nor in any folder above it up to
+`submissions/`, is rejected.
 
 **The JSON files stay self-contained.**  Each carries its own `meta` block with
 the hardware columns, exactly as it is appended to `data/data.json`, so nothing
