@@ -110,7 +110,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ "${{ steps.changed.outputs.count }}" -eq 0 ]; then
-            printf '## Submission validation\n\nNo submission files changed in this pull request.\n' > report.md
+            printf '## Submission validation\n\nNo submission files to check: nothing was added or modified under `submissions/` (outside `example/`) in this pull request. A submission is a folder -- `submissions/<date>_<handle>/<machine>/` -- holding the machine'"'"'s `meta.yaml` and its result files.\n' > report.md
             exit 0
           fi
           stamp=()

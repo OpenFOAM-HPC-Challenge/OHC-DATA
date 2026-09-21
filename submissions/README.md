@@ -11,14 +11,14 @@ yourself.
 
 ```
 submissions/
-  20260921_olenik/                       <- one submission: <date>_<handle>
-    horeka/                              <- one machine
-      meta.yaml                          <- that machine, described
-      42_OHC1_DrivAer_horeka_65M.json    <- its runs, one file per mesh
-      42_OHC1_DrivAer_horeka_110M.json
-    hawk/                                <- another machine, same submission
+  20260921_olenik/                    <- one submission: <date>_<handle>
+    horeka/                           <- one machine
+      meta.yaml                       <- that machine, described
+      OHC1_DrivAer_horeka_65M.json    <- its runs, one file per mesh
+      OHC1_DrivAer_horeka_110M.json
+    hawk/                             <- another machine, same submission
       meta.yaml
-      42_OHC1_DrivAer_hawk_65M.json
+      OHC1_DrivAer_hawk_65M.json
 ```
 
 Three things about that shape are worth spelling out, because each of them was
@@ -49,10 +49,10 @@ all.
 The file names inside a machine folder are yours to choose -- anything
 descriptive, e.g. `drivaer_coarse_scaling.json`.  Nothing is read out of them:
 your participant number comes from `Contributor ID` inside the file.  The
-harvester names them `<id>_OHC1_DrivAer_<machine>_<mesh>.json` and writes the
-same string into each record's `File Name`, which is the only provenance a row
-in `data/data.json` carries -- worth keeping distinct per machine, so two
-machines' rows can still be told apart there.
+harvester names them `OHC1_DrivAer_<machine>_<mesh>.json` and writes the same
+string into each record's `File Name`, which is the only provenance a row in
+`data/data.json` carries -- hence the machine in it, so two machines' rows can
+still be told apart there.
 
 Two directories are not submissions.  `example/` holds a complete, valid one to
 copy, laid out exactly as above; everything in there is treated as a sample --
@@ -135,8 +135,15 @@ The SVG needs nothing installed; the PNG needs `rsvg-convert` (`librsvg2-bin`).
 ## Checking it yourself
 
 ```sh
-./scripts/validate_submission.py submissions/20260921_olenik/*/*.json
+./scripts/validate_submission.py                       # every submission here
+./scripts/validate_submission.py submissions/20260921_olenik      # one of them
+./scripts/validate_submission.py submissions/20260921_olenik/hawk # one machine
 ```
+
+A folder is searched to any depth, and with no argument at all every
+submission in the checkout is checked.  It refuses to run on nothing rather
+than reporting zero problems, so a path that matches no file cannot look like
+a pass.
 
 Standard library only -- no `pip install` needed.  Errors block the merge;
 warnings do not, but they are usually worth a second look: a hardware string

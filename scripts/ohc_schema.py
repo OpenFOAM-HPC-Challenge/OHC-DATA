@@ -542,6 +542,29 @@ def load_submission(path, root=None):
 # The machine's meta.yaml
 # --------------------------------------------------------------------------- #
 
+# Subdirectories of submissions/ that hold JSON which is not a submission:
+# the sample, which must never reach the dataset.
+NOT_SUBMISSIONS = ("example",)
+
+
+def discover_submissions(submissions_dir):
+    """Every submission file under `submissions_dir`, at any depth.
+
+    A submission is a folder -- `<date>_<handle>/<machine>/` -- so finding one
+    means walking, not globbing a flat directory.  NOT_SUBMISSIONS is skipped:
+    the sample is checked on its own, never as a contribution.
+    """
+    found = []
+    for root, dirs, names in os.walk(submissions_dir):
+        dirs[:] = sorted(d for d in dirs
+                         if os.path.relpath(os.path.join(root, d),
+                                            submissions_dir).split(os.sep)[0]
+                         not in NOT_SUBMISSIONS)
+        found.extend(os.path.join(root, n)
+                     for n in names if n.endswith(".json"))
+    return sorted(found)
+
+
 def load_meta_yaml(path):
     """Read a flat ``key: value`` YAML mapping.
 

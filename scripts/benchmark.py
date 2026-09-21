@@ -31,7 +31,7 @@ per machine::
 
     submissions/<YYYYMMDD>_<handle>/<machine>/
         meta.yaml
-        <id>_OHC1_DrivAer_<machine>_<mesh>.json
+        OHC1_DrivAer_<machine>_<mesh>.json
 
 ``<handle>`` comes from ``--suffix`` (or ``legend_suffix`` in the metadata) and
 ``<machine>`` from ``--machine``, which defaults to the scheduler's cluster
@@ -1448,16 +1448,19 @@ def _as_int(value, default=None):
 
 
 def submission_name(meta, mesh, machine, extension):
-    """File name of one mesh's submission: participant, machine, mesh.
+    """File name of one mesh's submission: machine and mesh.
 
     The machine is part of it because a submission may cover several, and
     `File Name` is the only provenance a row in data/data.json carries: two
-    machines whose files were both called `42_OHC1_DrivAer_65M.json` would be
-    indistinguishable there.  The date and the handle already name the
-    enclosing `<YYYYMMDD>_<handle>` directory, so they are not repeated here.
+    machines whose files were both called `OHC1_DrivAer_65M.json` would be
+    indistinguishable there.  The participant is not: it is already in the
+    record's own `Contributor ID`, and putting it in the name only meant that
+    a metadata file which had not been filled in yet produced files called
+    `FIXME_...`.  Nor are the date and the handle, which name the enclosing
+    `<YYYYMMDD>_<handle>` directory.
     """
     _, label = MESHES[mesh]
-    parts = [sanitize(meta.get("participant_id", "XX")), "OHC1", "DrivAer"]
+    parts = ["OHC1", "DrivAer"]
     if machine:
         parts.append(machine)
     parts.append(label)

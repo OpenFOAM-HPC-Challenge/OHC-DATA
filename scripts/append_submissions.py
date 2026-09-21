@@ -67,25 +67,10 @@ def relative(path):
     return os.path.relpath(os.path.abspath(path), REPO).replace(os.sep, "/")
 
 
-# Subdirectories of submissions/ that hold JSON which is not a submission.
-NOT_SUBMISSIONS = ("example",)
-
-
-def discover(submissions_dir):
-    """Every submission under submissions/, at any depth.
-
-    Contributors group their files in a folder of their own, so this recurses
-    -- except into the directories listed in NOT_SUBMISSIONS, which hold the
-    sample submission that must never reach the dataset.
-    """
-    found = []
-    for root, dirs, names in os.walk(submissions_dir):
-        dirs[:] = sorted(d for d in dirs
-                         if os.path.relpath(os.path.join(root, d),
-                                            submissions_dir).split(os.sep)[0]
-                         not in NOT_SUBMISSIONS)
-        found.extend(os.path.join(root, n) for n in names if n.endswith(".json"))
-    return sorted(found)
+# One walker for the whole repository, in the schema module: what counts as a
+# submission -- a folder per machine, the sample excluded -- is the schema's
+# business, and validate_submission.py needs the same answer.
+discover = schema.discover_submissions
 
 
 def rewrite_dataset(path, records):
