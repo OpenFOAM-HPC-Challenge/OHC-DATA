@@ -14,6 +14,11 @@ legend_suffix: hkn2
 # --- hardware description (per node) ------------------------------
 server_type: CPU
 cpu: AMD EPYC 9655 96-Core
+cpu_family: AMD
+cpu_model: EPYC
+cpu_submodel: 9655
+cpu_generation: Turin (5th-gen)
+cpu_memory_bandwidth_gb_s: "614 GB/s"
 gpu: "-"
 gpus_per_node: 0
 memory_type: DDR5-6000
@@ -23,6 +28,7 @@ network_interconnect: 200 Gb/s per node (400 Gb/s shared per tray)
 network_topology: Fully non-blocking island
 storage_device: FIXME e.g. SSD
 storage_file_system: FIXME e.g. Lustre
+
 
 # Thermal design power of one *node* (all sockets + accelerators) in W.
 # Used to derive the per-simulation TDP and the energy to solution.
