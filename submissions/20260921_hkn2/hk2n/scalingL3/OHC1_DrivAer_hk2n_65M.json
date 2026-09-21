@@ -22,7 +22,7 @@
     "GPU Memory Bandwidth [GB/s]": null,
     "Last-Level Cache": "384MB",
     "Network Interconnect": "200 Gb/s per node (400 Gb/s shared per tray)",
-    "Storage File-System": "FIXME e.g. Lustre"
+    "Storage File-System": "Lustre"
   },
   "simulations": [
     {
