@@ -3,7 +3,7 @@
   "generated_by": "benchmark.py --postProcess --format json",
   "generated_on": "2026-09-21",
   "meta": {
-    "Contributor ID": "FIXME",
+    "Contributor ID": "greole",
     "Contributor Affiliation": "TUM",
     "File Name": "OHC1_DrivAer_hk2n_65M.json",
     "Track": "Hardware Track",
