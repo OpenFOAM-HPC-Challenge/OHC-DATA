@@ -4,6 +4,7 @@
 
 test_case: Test case 2a
 track: Hardware Track
+ohc_round: 2
 participant_id: FIXME
 lastname: FIXME
 firstname: FIXME
@@ -14,6 +15,12 @@ legend_suffix: FIXME
 software_optimization_category: Other
 
 # --- hardware description (per node) ------------------------------
+# Name of the machine.  It becomes the folder this machine's results
+# land in, so one submission can cover several of them.  'auto' takes
+# the name from the scheduler (SLURM_CLUSTER_NAME, LMOD_SYSTEM_NAME) or
+# the hostname, '-' means no machine folder at all, and --machine wins
+# over whatever stands here.
+machine: auto
 server_type: CPU
 cpu: FIXME e.g. Intel Xeon Platinum 8368
 cpu_family: FIXME e.g. Intel

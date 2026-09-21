@@ -26,6 +26,19 @@ the OpenFOAM HPC Challenge result spreadsheets (``META Data`` /
 this repository's ``submissions/`` directory takes (see
 ``submissions/README.md``).
 
+The harvest is laid out as one directory per submission and, inside it, one
+per machine::
+
+    submissions/<YYYYMMDD>_<handle>/<machine>/
+        meta.yaml
+        <id>_OHC1_DrivAer_<machine>_<mesh>.json
+
+``<handle>`` comes from ``--suffix`` (or ``legend_suffix`` in the metadata) and
+``<machine>`` from ``--machine``, which defaults to the scheduler's cluster
+name and can be turned off with ``--machine -``.  Harvesting a second machine
+with the same ``--suffix`` puts it beside the first, so one submission can
+cover several machines, each with the ``meta.yaml`` describing its hardware.
+
 Examples
 --------
     # Prepare all meshes at 128 and 256 cores (does not submit)
@@ -53,6 +66,7 @@ import itertools
 import os
 import re
 import shutil
+import socket
 import string
 import subprocess
 import sys
@@ -492,6 +506,12 @@ METADATA_TEMPLATE = [
     ("software_optimization_category", "Other"),
     ("", None),
     ("# --- hardware description (per node) ------------------------------", None),
+    ("# Name of the machine.  It becomes the folder this machine's results", None),
+    ("# land in, so one submission can cover several of them.  'auto' takes", None),
+    ("# the name from the scheduler (SLURM_CLUSTER_NAME, LMOD_SYSTEM_NAME) or", None),
+    ("# the hostname, '-' means no machine folder at all, and --machine wins", None),
+    ("# over whatever stands here.", None),
+    ("machine", "auto"),
     ("server_type", "CPU"),
     ("cpu", "FIXME e.g. Intel Xeon Platinum 8368"),
     # The JSON submission (--format json) keeps the CPU description in the four
@@ -1133,19 +1153,177 @@ def write_metadata_template(path):
 # Post-processing driver
 # --------------------------------------------------------------------------- #
 
+# Environment variables that name the machine rather than the node: SLURM sets
+# the first inside a job, the Lmod-based module systems of most HPC centres set
+# the second on the login nodes too, and OHC_MACHINE is the manual override for
+# a site that sets neither.
+MACHINE_VARS = ("OHC_MACHINE", "SLURM_CLUSTER_NAME", "LMOD_SYSTEM_NAME",
+                "CLUSTER_NAME")
+
+# Hostnames that name a role rather than a machine.  --postProcess is run on a
+# login node more often than anywhere else, and those are called exactly this;
+# when one of them is the hostname, the second label of the fully qualified
+# name usually is the machine (login01.hawk.hlrs.de -> hawk).
+GENERIC_HOSTS = ("login", "node", "head", "batch", "compute", "front",
+                 "frontend", "master", "gateway", "interactive")
+
+# Spellings of "do not put the runs in a machine folder at all".
+NO_MACHINE = ("", "-", "none", "no", "off")
+
+# ... and of "work the name out yourself", which is what the metadata template
+# ships with, so a contributor who never looks at the field still gets one
+# folder per machine.
+AUTO_MACHINE = ("auto", "detect", "default")
+
+
+def detect_machine():
+    """Name of the machine the harvested runs were made on.
+
+    The submission is grouped per machine, so this has to name the system, not
+    the node the harvest happens to run on: the scheduler's own cluster name
+    when there is one, otherwise the short hostname with its node number
+    stripped (``uc2n995`` -> ``uc2n``, ``hkn0801`` -> ``hkn``), which is as
+    close as a hostname gets.  The number is only dropped when enough of a
+    name is left without it -- ``k044`` is kept whole, since ``k`` would name
+    nothing.  Override it with ``--machine`` whenever the guess is not the name
+    the submission should carry.
+    """
+    for var in MACHINE_VARS:
+        value = os.environ.get(var, "").strip()
+        if value:
+            return sanitize(value).lower()
+    labels = socket.gethostname().split(".")
+    host = labels[0]
+    stem = re.sub(r"[-_]?\d+$", "", host)
+    if len(re.sub(r"[^A-Za-z]", "", stem)) >= 3:
+        host = stem
+    if host.lower() in GENERIC_HOSTS and len(labels) > 2:
+        host = labels[1]
+    return sanitize(host).lower()
+
+
+def resolve_machine(requested, declared=None):
+    """Turn --machine, the metadata's own `machine`, or neither into a folder.
+
+    ``--machine`` wins over the metadata file, which wins over the guess from
+    the scheduler; an empty result means the submission has no machine level --
+    the files land directly in the dated folder, which is all a one-machine
+    submission needs.
+    """
+    for value in (requested, declared):
+        if value is None:
+            continue
+        name = str(value).strip()
+        if name.lower() in AUTO_MACHINE:
+            break
+        if name.lower() in NO_MACHINE:
+            return ""
+        return sanitize(name).lower()
+    return detect_machine()
+
+
+def write_meta_yaml(path, source, updates):
+    """Write the machine's meta.yaml, keeping the comments of `source`.
+
+    The file next to the results is a copy of the metadata the harvest was
+    driven with rather than a re-rendering of it, so whatever the contributor
+    wrote in there -- comments, ordering, fields this script does not know --
+    survives into the submission.  Only the keys in `updates` are rewritten,
+    and any of them the source does not mention is appended.
+    """
+    text = _read_text(source) or ""
+    pending = dict(updates)
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and ":" in stripped:
+            key = stripped.split(":", 1)[0].strip()
+            if key in pending:
+                lines.append("%s: %s" % (key, yaml_scalar(pending.pop(key))))
+                continue
+        lines.append(line)
+    if pending:
+        if lines and lines[-1].strip():
+            lines.append("")
+        for key, value in sorted(pending.items()):
+            lines.append("%s: %s" % (key, yaml_scalar(value)))
+    with open(path, "w") as f:
+        f.write("\n".join(lines).rstrip("\n") + "\n")
+    return path
+
+
+# The metadata file is looked for in the workspace under the name the
+# submission itself uses, so the file a contributor fills in and the file that
+# ends up next to the results are the same thing.  The old name is still read
+# where a workspace already has one, so an existing filled-in file does not go
+# unnoticed.
+META_WORKSPACE_NAMES = ("meta.yaml", "meta.yml", "submissionMeta.yaml")
+
+
+def find_workspace_meta(workspace):
+    """The metadata file of `workspace`, or None when it has none yet."""
+    for name in META_WORKSPACE_NAMES:
+        candidate = os.path.join(workspace, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def template_todo():
+    """The fields of the metadata template that only the contributor can fill.
+
+    The FIXME strings, plus the node TDP: it ships as ``0`` because it is a
+    number and cannot say FIXME, and left at zero it silently empties the
+    energy columns of every run in the submission.
+    """
+    todo = [key for key, value in METADATA_TEMPLATE
+            if value is not None and str(value).startswith("FIXME")]
+    if "tdp_per_node_w" not in todo:
+        todo.append("tdp_per_node_w")
+    return todo
+
+
+def repo_submissions_dir():
+    """Return the OHC-DATA checkout's ``submissions/`` directory, or None.
+
+    When this script is run from a clone of the repository -- the usual case,
+    ``./scripts/benchmark.py`` -- the harvested submissions belong straight in
+    that clone's ``submissions/`` folder, which is what the pull request is
+    made of.  A copy of the script that lives outside such a checkout has no
+    such folder, and post-processing falls back to the workspace.
+    """
+    candidate = os.path.join(os.path.dirname(CASE_DIR), "submissions")
+    if os.path.isdir(candidate) and os.path.isfile(
+            os.path.join(candidate, "README.md")):
+        return candidate
+    return None
+
+
 def postprocess(args, workspace):
     runs_dir = os.path.join(workspace, "runs")
     if not os.path.isdir(runs_dir):
         sys.exit("error: no runs directory under %s -- nothing to post-process"
                  % workspace)
 
-    meta_path = args.metadata or os.path.join(workspace, "submissionMeta.yaml")
-    if not os.path.exists(meta_path):
-        write_metadata_template(meta_path)
-        print("wrote metadata template: %s" % meta_path)
-        print("Fill in the FIXME fields (hardware spec, participant, TDP) and "
-              "re-run --postProcess.")
-        return
+    # Nothing in the logs says who ran this, on what hardware, at what node
+    # TDP, so without the metadata there is no submission to write -- only a
+    # set of numbers nobody could attribute.  The first run therefore leaves a
+    # commented template behind and stops, rather than writing results that
+    # would have to be thrown away and harvested again.
+    meta_path = args.metadata or find_workspace_meta(workspace)
+    if meta_path is None or not os.path.exists(meta_path):
+        target = meta_path or os.path.join(workspace, META_WORKSPACE_NAMES[0])
+        write_metadata_template(target)
+        todo = template_todo()
+        print("wrote a metadata template: %s" % target)
+        sys.exit(
+            "error: this workspace has no metadata file, and the OpenFOAM "
+            "logs cannot supply one.\n"
+            "       Fill in the %d field(s) the template above leaves open "
+            "-- %s -- and re-run the same command.\n"
+            "       It is copied next to the results as that machine's "
+            "meta.yaml, which is what describes the hardware behind the "
+            "numbers in the submission." % (len(todo), ", ".join(todo)))
 
     meta = yaml_load_flat(meta_path)
     missing = sorted(k for k, v in meta.items() if str(v).startswith("FIXME"))
@@ -1153,20 +1331,28 @@ def postprocess(args, workspace):
         print("  ! %s still has placeholder values: %s"
               % (meta_path, ", ".join(missing)))
 
-    # Results are grouped per harvest: <parent>/<YYYYMMDD>_<suffix>/.  Re-running
-    # on another day therefore keeps the previous submission intact instead of
-    # overwriting it.
+    # Results are grouped per harvest and, inside it, per machine:
+    #
+    #     <parent>/<YYYYMMDD>_<handle>/<machine>/
+    #
+    # Re-running on another day therefore keeps the previous submission intact
+    # instead of overwriting it, and harvesting a second machine into the same
+    # dated folder adds a folder beside the first rather than mixing the two.
     suffix = sanitize(args.suffix or meta.get("legend_suffix") or "run")
     stamp = datetime.date.today().strftime("%Y%m%d")
-    parent = args.postprocess_out or os.path.join(workspace, "submissions")
+    parent = (args.postprocess_out or repo_submissions_dir()
+              or os.path.join(workspace, "submissions"))
+    machine = resolve_machine(args.machine, meta.get("machine"))
     outdir = os.path.join(parent, "%s_%s" % (stamp, suffix))
-    os.makedirs(outdir, exist_ok=True)
+    if machine:
+        outdir = os.path.join(outdir, machine)
 
     # The suffix also drives the OHC plot legend, so keep the two in sync when
     # it was overridden on the command line.
     meta["legend_suffix"] = suffix
 
     written = []
+    meta_yaml = None
     for mesh in args.mesh:
         mesh_dir = os.path.join(runs_dir, mesh)
         if not os.path.isdir(mesh_dir):
@@ -1203,12 +1389,20 @@ def postprocess(args, workspace):
 
         # write_submission consumes the history keys, so report first, and
         # let the JSON writer -- which needs none of them -- go first too.
+        os.makedirs(outdir, exist_ok=True)
+        if meta_yaml is None:
+            # The hardware behind the numbers belongs next to them: one
+            # meta.yaml per machine folder, whichever meshes end up in it.
+            meta_yaml = write_meta_yaml(
+                os.path.join(outdir, "meta.yaml"), meta_path,
+                {"legend_suffix": suffix, "machine": machine or "-"})
+            print("  -> %s" % display_path(meta_yaml, workspace))
         if args.submission_format in ("json", "both"):
-            path = write_json_submission(outdir, mesh, meta, runs)
+            path = write_json_submission(outdir, mesh, meta, runs, machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         if args.submission_format in ("yaml", "both"):
-            path = write_submission(outdir, mesh, meta, runs, args)
+            path = write_submission(outdir, mesh, meta, runs, args, machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         print("")
@@ -1218,9 +1412,20 @@ def postprocess(args, workspace):
         return
 
     print("\nwrote %d submission file(s) under %s" % (len(written), outdir))
-    print("Review them, then copy into the OHC-DATA repository's submissions/ "
-          "folder for the pull request.  scripts/validate_submission.py there "
-          "checks a JSON submission before you open it.")
+    if machine:
+        print("They describe machine '%s'.  Harvest another machine's "
+              "workspace with the same --suffix to add it to this submission "
+              "as a folder of its own." % machine)
+    if parent == repo_submissions_dir():
+        print("They are already inside this checkout's submissions/ folder, "
+              "so review them and commit them for the pull request.  "
+              "scripts/validate_submission.py checks a JSON submission before "
+              "you open it.")
+    else:
+        print("Review them, then copy into the OHC-DATA repository's "
+              "submissions/ folder for the pull request.  "
+              "scripts/validate_submission.py there checks a JSON submission "
+              "before you open it.")
 
 
 def _as_number(value):
@@ -1231,7 +1436,35 @@ def _as_number(value):
         return None
 
 
-def write_json_submission(outdir, mesh, meta, runs):
+def _as_int(value, default=None):
+    """Return `value` as an int, or `default` when it is not a number.
+
+    The metadata file is read as flat text, so every value out of it is a
+    string -- and a column the dataset declares as a whole number has to reach
+    the JSON as one, not as "2".
+    """
+    number = _as_number(value)
+    return int(number) if number is not None else default
+
+
+def submission_name(meta, mesh, machine, extension):
+    """File name of one mesh's submission: participant, machine, mesh.
+
+    The machine is part of it because a submission may cover several, and
+    `File Name` is the only provenance a row in data/data.json carries: two
+    machines whose files were both called `42_OHC1_DrivAer_65M.json` would be
+    indistinguishable there.  The date and the handle already name the
+    enclosing `<YYYYMMDD>_<handle>` directory, so they are not repeated here.
+    """
+    _, label = MESHES[mesh]
+    parts = [sanitize(meta.get("participant_id", "XX")), "OHC1", "DrivAer"]
+    if machine:
+        parts.append(machine)
+    parts.append(label)
+    return "_".join(parts) + extension
+
+
+def write_json_submission(outdir, mesh, meta, runs, machine=""):
     """Emit one mesh as the flat JSON the OHC-DATA repository ingests.
 
     This is the same sweep as write_submission(), reduced to the columns of
@@ -1240,9 +1473,7 @@ def write_json_submission(outdir, mesh, meta, runs):
     request and appends the records once it is merged; see that repository's
     submissions/README.md for the schema.
     """
-    _, label = MESHES[mesh]
-    name = "%s_OHC1_DrivAer_%s.json" % (
-        sanitize(meta.get("participant_id", "XX")), label)
+    name = submission_name(meta, mesh, machine, ".json")
 
     hardware = runs[0].get("hardware", {})
     document = {
@@ -1254,7 +1485,7 @@ def write_json_submission(outdir, mesh, meta, runs):
             "Contributor Affiliation": meta.get("affiliation", "N/A"),
             "File Name": name,
             "Track": meta.get("track", "Hardware Track"),
-            "OHC": meta.get("ohc_round", 2),
+            "OHC": _as_int(meta.get("ohc_round"), 2),
             "Submission Date": datetime.date.today().isoformat(),
             "Software Optimization Category": meta.get(
                 "software_optimization_category", "Other"),
@@ -1311,7 +1542,7 @@ def write_json_submission(outdir, mesh, meta, runs):
     return path
 
 
-def write_submission(outdir, mesh, meta, runs, args):
+def write_submission(outdir, mesh, meta, runs, args, machine=""):
     """Emit one YAML submission file covering every run of a single mesh."""
     _, label = MESHES[mesh]
 
@@ -1351,10 +1582,7 @@ def write_submission(outdir, mesh, meta, runs, args):
 
         document["simulations"].append(entry)
 
-    # The suffix already names the enclosing <YYYYMMDD>_<suffix> directory, so
-    # the file itself only needs the participant and the mesh.
-    name = "%s_OHC1_DrivAer_%s.yaml" % (
-        sanitize(meta.get("participant_id", "XX")), label)
+    name = submission_name(meta, mesh, machine, ".yaml")
     path = os.path.join(outdir, name)
     with open(path, "w") as f:
         f.write("\n".join(yaml_dump(document)) + "\n")
@@ -1442,9 +1670,13 @@ examples:
   ./benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer
 
   # Only the fine mesh, subsampling the force history every 10th iteration,
-  # into submissions/<YYYYMMDD>_tuned/
+  # into submissions/<YYYYMMDD>_tuned/<machine>/
   ./benchmark.py --postProcess --mesh fine --forces-stride 10 --suffix tuned \\
                  --workspace /scratch/$USER/occDrivAer
+
+  # A second machine into the same submission: same handle, own folder
+  ./benchmark.py --postProcess --suffix tuned --machine horeka \\
+                 --workspace /scratch/$USER/occDrivAer-horeka
 """
 
 
@@ -1562,20 +1794,32 @@ def build_parser():
                         "submission per mesh (see --format)")
     g.add_argument("--metadata", metavar="FILE",
                    help="metadata file with the fields that cannot be derived "
-                        "from the logs (participant, hardware, TDP). A "
-                        "commented template is written on first use "
-                        "(default: <workspace>/submissionMeta.yaml)")
+                        "from the logs (participant, hardware, TDP). Without "
+                        "it, a commented template is written and the harvest "
+                        "stops so it can be filled in "
+                        "(default: <workspace>/meta.yaml, or the legacy "
+                        "submissionMeta.yaml where one exists)")
     g.add_argument("--postprocess-out", metavar="DIR", dest="postprocess_out",
                    help="parent directory for the generated submissions "
-                        "(default: <workspace>/submissions). The files "
-                        "themselves land in a <YYYYMMDD>_<suffix> "
-                        "subdirectory of it")
+                        "(default: the submissions/ folder of this OHC-DATA "
+                        "checkout, or <workspace>/submissions when the script "
+                        "runs outside one). The files themselves land in a "
+                        "<YYYYMMDD>_<suffix> subdirectory of it")
     # --sufix is accepted as an alias so the spelling used on the command line
     # does not matter.
     g.add_argument("--suffix", "--sufix", dest="suffix", metavar="NAME",
-                   help="suffix of the dated output directory and of the plot "
-                        "legend (default: legend_suffix from the metadata "
-                        "file)")
+                   help="your handle: it names the dated submission directory "
+                        "(<YYYYMMDD>_<NAME>) and the plot legend "
+                        "(default: legend_suffix from the metadata file)")
+    g.add_argument("--machine", metavar="NAME",
+                   help="machine folder written inside the dated directory, "
+                        "so several machines can share one submission. Each "
+                        "gets its own meta.yaml. Default: 'machine' from the "
+                        "metadata file, or -- where that says 'auto' -- the "
+                        "scheduler's cluster name (SLURM_CLUSTER_NAME, "
+                        "LMOD_SYSTEM_NAME, OHC_MACHINE) falling back to the "
+                        "short hostname. Pass '-' to put the files straight "
+                        "in the dated directory")
     g.add_argument("--avg-window", type=int, default=200, dest="avg_window",
                    metavar="N",
                    help="number of trailing iterations averaged for the "

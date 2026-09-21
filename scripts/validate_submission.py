@@ -32,6 +32,10 @@ import ohc_schema as schema
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET = os.path.join(REPO, "data", "data.json")
+# A submission's machine description is looked up next to the file and then up
+# its own folder; the walk stops here, so it can never read the metadata of a
+# neighbouring contributor's submission.
+SUBMISSIONS = os.path.join(REPO, "submissions")
 # data/data.json is the single source of truth, so it is the only file
 # enum-learning and the self-check read.  The raw round archives
 # (data/data_OHC1.json) are kept for provenance but add nothing here: their
@@ -55,7 +59,7 @@ def supplied_fields(ohc=None, submission_date=None):
 
 
 def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None,
-                   supplied=None):
+                   supplied=None, submissions_dir=SUBMISSIONS):
     """Validate every path.  Returns a report dict.
 
     `ignore_keys` lists record keys that must not count as duplicates -- the
@@ -82,7 +86,7 @@ def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None,
     files = []
     seen_in_this_run = {}
     for path in paths:
-        raw_records, issues = schema.load_submission(path)
+        raw_records, issues = schema.load_submission(path, submissions_dir)
         accepted = []
         for where, raw in raw_records:
             record, record_issues = schema.validate_record(

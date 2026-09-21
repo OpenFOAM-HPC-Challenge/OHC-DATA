@@ -1,36 +1,119 @@
 # Submitting results
 
-Open a pull request that adds **one JSON file** to this directory.  The
-`validate-submission` workflow checks it against the schema and reports every
-problem it finds on the pull request; once the pull request is merged, the
-`append-submissions` workflow appends the records to `data/data.json` and
-commits the result.  You never edit `data/data.json` yourself.
+Open a pull request that adds **one folder** to this directory.  The
+`validate-submission` workflow checks every result file in it against the
+schema and reports each problem it finds on the pull request; once the pull
+request is merged, the `append-submissions` workflow appends the records to
+`data/data.json` and commits the result.  You never edit `data/data.json`
+yourself.
 
-The file name is yours to choose -- anything descriptive that no other
-submission already uses, e.g. `drivaer_coarse_scaling.json`.  Nothing is read
-out of it: your participant number comes from `Contributor ID` inside the
-file.  Put it anywhere under this directory: a folder of your own, like
-`OHC-Comitee/OHC1.json`, is picked up just as well as a file sitting here.
+## Layout
 
-The one exception is `example/`, which holds a complete, valid submission to
-copy.  Everything in there is treated as a sample rather than a submission --
-never validated as one, never plotted, never appended -- so that no example
-data can reach the dataset.
+```
+submissions/
+  20260921_olenik/                       <- one submission: <date>_<handle>
+    horeka/                              <- one machine
+      meta.yaml                          <- that machine, described
+      42_OHC1_DrivAer_horeka_65M.json    <- its runs, one file per mesh
+      42_OHC1_DrivAer_horeka_110M.json
+    hawk/                                <- another machine, same submission
+      meta.yaml
+      42_OHC1_DrivAer_hawk_65M.json
+```
 
-## Producing the file
+Three things about that shape are worth spelling out, because each of them was
+a choice:
+
+**The machine folder is optional.**  A submission that covers a single machine
+may drop `meta.yaml` and the JSON straight into `20260921_olenik/` and skip the
+level entirely.  It exists so that *several* machines can share one submission:
+one folder each, side by side, in one pull request.  Nothing is read out of the
+folder names -- they order the directory for humans, and that is all.
+
+**Every machine carries a `meta.yaml`.**  It describes the hardware the numbers
+next to it were measured on -- CPU, memory, interconnect, node TDP -- in the
+contributor's own words.  `benchmark.py --postProcess` writes it as a copy of
+the `meta.yaml` in the workspace it was driven with, comments and all; for a
+hand-assembled submission, copy [`meta.yaml.template`](meta.yaml.template) and
+fill it in.  A result file with no `meta.yaml` in its folder, nor in the
+submission folder above it, is rejected.
+
+**The JSON files stay self-contained.**  Each carries its own `meta` block with
+the hardware columns, exactly as it is appended to `data/data.json`, so nothing
+has to read the YAML to ingest a submission.  `meta.yaml` is the human-readable
+record beside it, not the source the pipeline pulls from; the two are compared,
+and a field where they disagree is reported as a warning so they cannot quietly
+drift apart.  It also means a single hand-written JSON needs no YAML tooling at
+all.
+
+The file names inside a machine folder are yours to choose -- anything
+descriptive, e.g. `drivaer_coarse_scaling.json`.  Nothing is read out of them:
+your participant number comes from `Contributor ID` inside the file.  The
+harvester names them `<id>_OHC1_DrivAer_<machine>_<mesh>.json` and writes the
+same string into each record's `File Name`, which is the only provenance a row
+in `data/data.json` carries -- worth keeping distinct per machine, so two
+machines' rows can still be told apart there.
+
+Two directories are not submissions.  `example/` holds a complete, valid one to
+copy, laid out exactly as above; everything in there is treated as a sample --
+never validated as a submission, never plotted, never appended -- so no example
+data can reach the dataset.  `OHC-Comitee/` holds the committee's round
+archives, which aggregate many contributors and machines into one list and
+therefore have no single machine to describe.
+
+## Producing the files
 
 `scripts/benchmark.py --postProcess --format json` harvests a finished
-benchmark workspace straight into this format:
+benchmark workspace straight into that layout:
 
 ```sh
 ./scripts/benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer \
                        --format json
 ```
 
-It writes `<workspace>/submissions/<date>_<suffix>/<id>_OHC1_DrivAer_<mesh>.json`;
-copy that file here.  Fields the OpenFOAM logs cannot know (your affiliation,
-the CPU model, the node TDP) come from `submissionMeta.yaml`, which the same
-command writes as a template on its first run.
+Run from a clone of this repository, it writes into this directory, as
+`submissions/<date>_<handle>/<machine>/`, so the files are ready to commit.  (A
+copy of the script living outside a checkout has no such directory and falls
+back to `<workspace>/submissions/`; `--postprocess-out DIR` overrides either.)
+Fields the OpenFOAM logs cannot know -- your affiliation, the CPU model, the
+node TDP -- come from `<workspace>/meta.yaml`.  The first `--postProcess` run
+of a workspace has none, so it writes a commented template there, names the
+fields only you can fill, and stops with a non-zero exit status rather than
+harvesting results nobody could attribute:
+
+```
+wrote a metadata template: /scratch/$USER/occDrivAer/meta.yaml
+error: this workspace has no metadata file, and the OpenFOAM logs cannot
+       supply one.
+       Fill in the 19 field(s) the template above leaves open -- participant_id,
+       ..., tdp_per_node_w -- and re-run the same command.
+```
+
+Fill it in once and re-run the same command; the file is then copied next to
+the results as that machine's `meta.yaml`.  `--metadata FILE` points somewhere
+else (and gets the same treatment when that file does not exist yet), and a
+workspace that still has the older `submissionMeta.yaml` is read as before.
+
+- `<date>` is the day of the harvest, so re-running tomorrow leaves today's
+  submission alone instead of overwriting it.
+- `<handle>` is `--suffix NAME`, defaulting to `legend_suffix` from the
+  metadata file.  It is the same string that labels your runs in the challenge
+  plots, which is why one value names both.
+- `<machine>` is `--machine NAME`.  Left out, it is taken from the `machine`
+  field of the metadata file; where that says `auto` (as the template ships),
+  the name comes from the scheduler -- `SLURM_CLUSTER_NAME`,
+  `LMOD_SYSTEM_NAME`, `OHC_MACHINE` -- falling back to the short hostname with
+  its node number dropped (`hkn0801` -> `hkn`, `login01.hawk.hlrs.de` ->
+  `hawk`).  Check what it picked; a guess from a hostname is only ever a guess.
+  `--machine -` omits the level.
+
+To put a second machine in the same submission, harvest its workspace with the
+same `--suffix` on the same day:
+
+```sh
+./scripts/benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer-hawk \
+                       --format json --suffix olenik --machine hawk
+```
 
 ## The preview plot
 
@@ -43,7 +126,8 @@ front of the published field, so you can see whether your machine extends it.
 Draw it yourself with:
 
 ```sh
-./scripts/plot_submission.py submissions/<your file>.json --output preview.svg --png
+./scripts/plot_submission.py submissions/20260921_olenik/*/*.json \
+                             --output preview.svg --png
 ```
 
 The SVG needs nothing installed; the PNG needs `rsvg-convert` (`librsvg2-bin`).
@@ -51,7 +135,7 @@ The SVG needs nothing installed; the PNG needs `rsvg-convert` (`librsvg2-bin`).
 ## Checking it yourself
 
 ```sh
-./scripts/validate_submission.py submissions/42_OHC_DrivAer_coarse.json
+./scripts/validate_submission.py submissions/20260921_olenik/*/*.json
 ```
 
 Standard library only -- no `pip install` needed.  Errors block the merge;
@@ -110,6 +194,18 @@ strong-scaling sweep is several records in one file.
 
 Beyond the per-field types and ranges in the table below:
 
+- An envelope file has a `meta.yaml` next to it, or one folder up -- the
+  machine it ran on has to be described somewhere.  Searching stops at your
+  own submission folder, so a neighbour's metadata can never stand in for
+  yours, and a file dropped straight into `submissions/` has nowhere of its
+  own and is refused.  The aggregate shape (a bare list of records, as in
+  `OHC-Comitee/`) is exempt: one machine description cannot speak for many
+  contributors.
+- What that `meta.yaml` says about the contributor and the hardware agrees
+  with the `meta` block of the JSON beside it, and its `FIXME` placeholders
+  have been filled in.  Both are warnings, not errors: the JSON is what gets
+  appended, so a disagreement means the two drifted, not that the numbers are
+  wrong.
 - `Number of Cells` has to match the mesh (65M coarse, 110M medium,
   236M fine).
 - Cores are counted across the whole allocation, so they cannot be fewer than

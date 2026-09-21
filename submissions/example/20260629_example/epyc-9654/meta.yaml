@@ -1,0 +1,51 @@
+# Sample machine description, the companion of the JSON next to it.
+#
+# One of these belongs in every machine folder of a submission: it says what
+# the numbers were measured on, in the contributor's own words, and stays
+# readable next to them long after the run.  `benchmark.py --postProcess`
+# writes it as a copy of the workspace's own meta.yaml; a
+# hand-assembled submission copies submissions/meta.yaml.template instead.
+#
+# Everything in submissions/example/ is a sample: never validated as a
+# submission, never plotted, never appended.
+
+test_case: Test case 2a
+track: Hardware Track
+ohc_round: 2
+participant_id: "99"
+lastname: Example
+firstname: Eva
+affiliation: Example Institute
+email: eva@example.invalid
+legend_suffix: example
+
+software_optimization_category: Other
+
+# --- hardware description (per node) ------------------------------
+# Name of the machine.  It becomes the folder this machine's results
+# land in, so one submission can cover several of them.  'auto' takes
+# the name from the scheduler (SLURM_CLUSTER_NAME, LMOD_SYSTEM_NAME) or
+# the hostname, '-' means no machine folder at all, and --machine wins
+# over whatever stands here.
+machine: epyc-9654
+server_type: CPU
+cpu: AMD EPYC 9654
+cpu_family: AMD
+cpu_model: EPYC
+cpu_submodel: "9654"
+cpu_generation: Genoa (4th-gen)
+cpu_memory_bandwidth_gb_s: 460.8
+gpu: "-"
+gpu_memory_bandwidth_gb_s: "-"
+gpus_per_node: 0
+memory_type: DDR5-4800
+memory_capacity_per_node: 768GB
+last_level_cache: 384MB
+network_interconnect: Infiniband NDR 200
+network_topology: Fat-tree
+storage_device: SSD
+storage_file_system: Lustre
+
+# Thermal design power of one *node* (all sockets + accelerators) in W.
+# Used to derive the per-simulation TDP and the energy to solution.
+tdp_per_node_w: 700
