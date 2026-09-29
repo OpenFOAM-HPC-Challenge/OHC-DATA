@@ -5,6 +5,9 @@ This is a self-contained driver (Python standard library only, no external
 modules) for setting up strong-scaling benchmark runs of the OpenFOAM HPC
 Challenge occDrivAer case.  It
 
+  0. obtains the case itself -- the directory this script sits in when that
+     is already a case, otherwise the upstream one, downloaded from the
+     OpenFOAM HPC committee repository into ``<workspace>/case/``,
   1. downloads and extracts the requested polyMesh resolution(s)
      (fine / medium / coarse) from Zenodo -- by default all three,
   2. builds one self-contained case copy per (mesh, nCores) combination under
@@ -22,7 +25,8 @@ sibling script ``postprocess.py``; what the two share lives in ``common.py``.
 
 Examples
 --------
-    # Prepare all meshes at 128 and 256 cores (does not submit)
+    # Prepare all meshes at 128 and 256 cores (does not submit).  Run from
+    # outside a case, this downloads the case as well as the meshes.
     ./benchmark.py --ncores 128,256
 
     # Only the coarse mesh, a scaling sweep, submitted to the queue
@@ -48,8 +52,9 @@ import tarfile
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_DEFINITION, CASE_DIR, MESHES, ZENODO_URL,
-                    add_shared_arguments, parse_posint_list, parse_start)
+from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
+                    CASE_WEB_URL, MESHES, ZENODO_URL, add_shared_arguments,
+                    display_path, is_case, parse_posint_list, parse_start)
 
 # Optional: decomposition methods that need more than a coefficient triplet
 # (currently multiLevel) live in a sibling module.  Absent is fine -- the two
@@ -232,7 +237,7 @@ def hierarchical_for(ncores, start):
 
 
 # --------------------------------------------------------------------------- #
-# Mesh download / extraction
+# Case / mesh download / extraction
 # --------------------------------------------------------------------------- #
 
 def download(url, dest):
@@ -274,9 +279,23 @@ def find_polymesh(root):
     return None
 
 
-def extract(tarball, destdir):
-    """Extract `tarball` into `destdir`, returning the polyMesh path."""
-    existing = find_polymesh(destdir)
+def find_case(root):
+    """Locate an occDrivAer case directory under `root`.
+
+    The GitLab subdirectory archive keeps the whole path inside the tarball
+    (``hpc-develop-.../incompressible/simpleFoam/occDrivAerStaticMesh``), so
+    the case is found by looking for its caseDefinition rather than by
+    assuming a fixed nesting depth.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        if is_case(dirpath):
+            return dirpath
+    return None
+
+
+def extract(tarball, destdir, locate=find_polymesh, what="polyMesh"):
+    """Extract `tarball` into `destdir`, returning the path `locate` finds."""
+    existing = locate(destdir)
     if existing:
         print("  = already extracted: %s" % existing)
         return existing
@@ -290,10 +309,10 @@ def extract(tarball, destdir):
         except TypeError:
             tar.extractall(destdir)
 
-    polymesh = find_polymesh(destdir)
-    if not polymesh:
-        raise RuntimeError("no polyMesh found after extracting %s" % tarball)
-    return polymesh
+    found = locate(destdir)
+    if not found:
+        raise RuntimeError("no %s found after extracting %s" % (what, tarball))
+    return found
 
 
 def prepare_mesh(mesh, meshes_dir):
@@ -306,6 +325,48 @@ def prepare_mesh(mesh, meshes_dir):
 
     download(ZENODO_URL.format(tarname), tarball)
     return extract(tarball, extract_dir)
+
+
+def prepare_case(workspace):
+    """Download the upstream case into `<workspace>/case`, returning its path.
+
+    Downloaded once and reused: a second invocation finds the extracted case
+    and touches the network not at all.
+    """
+    case_root = os.path.join(workspace, "case")
+    os.makedirs(case_root, exist_ok=True)
+
+    existing = find_case(case_root)
+    if existing:
+        print("[case] = already downloaded: %s"
+              % display_path(existing, workspace))
+        return existing
+
+    print("[case] %s" % CASE_WEB_URL)
+    tarball = os.path.join(case_root, "occDrivAerStaticMesh.tar.gz")
+    download(CASE_ARCHIVE_URL, tarball)
+    return extract(tarball, case_root, locate=find_case, what="case")
+
+
+def resolve_case(args, workspace):
+    """Decide which directory is the pristine case the runs are copied from.
+
+    An explicit --case wins; otherwise the script's own directory is used when
+    the scripts were dropped into a case checkout (the original convention,
+    and the one that respects local modifications), and the upstream case is
+    downloaded when they were not.
+    """
+    if args.case:
+        case_dir = os.path.abspath(args.case)
+        if not is_case(case_dir):
+            sys.exit("error: --case %s is not an occDrivAer case (no %s)"
+                     % (args.case, CASE_DEFINITION))
+        return case_dir
+
+    if not args.download_case and is_case(CASE_DIR):
+        return CASE_DIR
+
+    return prepare_case(workspace)
 
 
 # --------------------------------------------------------------------------- #
@@ -321,9 +382,9 @@ def _ignore(dirpath, names):
     return ignored
 
 
-def copy_case(dst):
+def copy_case(src, dst):
     """Copy the pristine case into `dst` (excluding mesh / generated files)."""
-    shutil.copytree(CASE_DIR, dst, ignore=_ignore,
+    shutil.copytree(src, dst, ignore=_ignore,
                     symlinks=True, dirs_exist_ok=True)
 
 
@@ -453,24 +514,11 @@ examples:
   # Custom workspace location
   ./benchmark.py --ncores 512 --workspace /scratch/$USER/occDrivAer
 
-  # Harvest the finished runs of that workspace into YAML submissions
-  ./benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer
+  # Copy the runs from a case of your own rather than the upstream one
+  ./benchmark.py --ncores 512 --case /path/to/my/occDrivAerStaticMesh
 
-  # Only the fine mesh, subsampling the force history every 10th iteration,
-  # into submissions/<YYYYMMDD>_tuned/<machine>/
-  ./benchmark.py --postProcess --mesh fine --forces-stride 10 --suffix tuned \\
-                 --workspace /scratch/$USER/occDrivAer
-
-  # A second machine into the same submission: same handle, own folder
-  ./benchmark.py --postProcess --suffix tuned --machine horeka \\
-                 --workspace /scratch/$USER/occDrivAer-horeka
-
-  # Two configurations of one machine, side by side, each with its own
-  # meta.yaml: submissions/<YYYYMMDD>_tuned/horeka/{l3,multilevel}/
-  ./benchmark.py --postProcess --suffix tuned --machine horeka --run l3 \\
-                 --workspace /scratch/$USER/occDrivAer-l3
-  ./benchmark.py --postProcess --suffix tuned --machine horeka \\
-                 --run multilevel --workspace /scratch/$USER/occDrivAer-ml
+  # Once the queue is done, harvest that workspace with the sibling script
+  ./postprocess.py --workspace /scratch/$USER/occDrivAer
 """
 
 
@@ -493,6 +541,15 @@ def build_parser():
                    metavar="N",
                    help="cores per node; combined with --nnodes to derive "
                         "nCores (and used as tasks per node)")
+    p.add_argument("--case", metavar="DIR",
+                   help="pristine case the runs are copied from (default: "
+                        "the directory this script sits in when that is a "
+                        "case, otherwise the upstream case, downloaded into "
+                        "<workspace>/case)")
+    p.add_argument("--download-case", action="store_true", dest="download_case",
+                   help="always fetch the upstream case from the OpenFOAM HPC "
+                        "committee repository, even when this script already "
+                        "sits in a case")
     p.add_argument("--slurm-template", metavar="FILE",
                    help="SLURM template file providing sbatch directives; "
                         "$ncores $nhierarchical $mesh $jobname $tpn $nodes "
@@ -585,6 +642,9 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.case and args.download_case:
+        parser.error("--case names a local case; drop --download-case")
 
     if args.postprocess:
         parser.error("--postProcess has moved into its own script; run "
@@ -731,6 +791,10 @@ def main(argv=None):
         print("nodes:     %s" % ", ".join(str(r["nodes"]) for r in runs))
     print()
 
+    case_dir = resolve_case(args, workspace)
+    print("case:      %s" % display_path(case_dir, workspace))
+    print()
+
     use_plugin = (decompositionPlugin
                   and args.decomposition == decompositionPlugin.NAME)
     if use_plugin:
@@ -743,7 +807,7 @@ def main(argv=None):
 
     extents = None
     if args.decomposition == "optimal":
-        extents = args.domain_aspect or domain_extents()
+        extents = args.domain_aspect or domain_extents(case_dir)
         if extents is None:
             sys.exit("error: --decomposition optimal needs the domain size; "
                      "could not read system/blockMeshDict -- pass "
@@ -777,7 +841,7 @@ def main(argv=None):
             if spec["ompiflags"]:
                 print("       placement %s" % spec["ompiflags"])
 
-            copy_case(run_dir)
+            copy_case(case_dir, run_dir)
             link_polymesh(run_dir, polymesh)
             set_decomposition(run_dir, ncores, triplet)
             if plugin_spec:

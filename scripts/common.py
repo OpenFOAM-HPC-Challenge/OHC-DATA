@@ -25,11 +25,30 @@ ZENODO_URL = "https://zenodo.org/records/15012221/files/{}?download=1"
 # are the nominal counts the challenge reports, matching OHCParser.get_cells().
 MESH_CELLS = {"coarse": 65e6, "medium": 110e6, "fine": 236e6}
 
-# The directory holding these scripts is treated as the pristine source
-# case: benchmark.py copies it into every run directory.
+# The directory holding these scripts is treated as the pristine source case
+# when it is one -- i.e. when the scripts were dropped into a case checkout.
+# Otherwise benchmark.py downloads the case (see CASE_ARCHIVE_URL).
 CASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CASE_DEFINITION = os.path.join("system", "include", "caseDefinition")
+
+# Upstream home of the case itself, in the OpenFOAM HPC committee repository.
+CASE_PROJECT_URL = "https://develop.openfoam.com/committees/hpc"
+CASE_REF = "develop"
+CASE_PATH = "incompressible/simpleFoam/occDrivAerStaticMesh"
+CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_REF, CASE_PATH)
+
+# GitLab serves any subdirectory of a repository as its own tarball, so the
+# case comes down in one request and without a git client.  The archive still
+# carries the full path inside it, hence find_case() rather than a fixed
+# strip-components count.
+CASE_ARCHIVE_URL = ("%s/-/archive/%s/hpc-%s.tar.gz?path=%s"
+                    % (CASE_PROJECT_URL, CASE_REF, CASE_REF, CASE_PATH))
+
+
+def is_case(path):
+    """True when `path` looks like an occDrivAer case directory."""
+    return os.path.isfile(os.path.join(path, CASE_DEFINITION))
 
 
 # --------------------------------------------------------------------------- #

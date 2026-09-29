@@ -6,42 +6,40 @@ collected as one dataset.
 ## Generating the submission data
 
 `scripts/` holds a pair of drivers for the occDrivAer static-mesh case:
-`benchmark.py` sets the runs up, `postprocess.py` reads them back out again,
-and `common.py` is what the two share. Standard library only -- there is
-nothing to install.
-
-Both work on a *workspace*: one directory holding the downloaded meshes, one
-self-contained case copy per run, and the harvested result.
-
-```
-<workspace>/meshes/<mesh>/...               shared polyMesh, downloaded once
-<workspace>/runs/<mesh>/<nCores>/           one case copy per run
-<workspace>/submissionMeta.yaml             what the logs cannot know
-<workspace>/submissions/<date>_<suffix>/    the files you submit
-```
+`benchmark.py` sets the runs up, `postprocess.py` reads them back out again.
 
 ### 1. Set the runs up
 
-`benchmark.py` copies the case it sits in, so place the three scripts in your
-occDrivAer case directory and run them from there:
+The `benchmark.py` script automates the preprocessing procedure of downloading
+the case and the meshes, and decomposing according to the provided number of
+ranks. Nothing has to be in place first:
 
 ```sh
-cd /path/to/occDrivAer
 ./benchmark.py --mesh coarse --ncores 128,256,512 \
                --workspace /scratch/$USER/occDrivAer
 ```
 
-That downloads the requested polyMesh resolutions from Zenodo (fine, medium
-and coarse -- all three unless `--mesh` says otherwise), builds one case copy
-per mesh and core count with the mesh symlinked to the shared copy, writes the
-hierarchical decomposition into each copy's `system/include/caseDefinition`,
-and renders a SLURM script beside it. Add `--submit` to queue them straight
-away, or submit the generated `run.slurm` files yourself.
+That fetches the
+[occDrivAerStaticMesh case](https://develop.openfoam.com/committees/hpc/-/tree/develop/incompressible/simpleFoam/occDrivAerStaticMesh)
+from the OpenFOAM HPC committee repository into `<workspace>/case`, downloads
+the requested polyMesh resolutions from Zenodo (fine, medium and coarse -- all
+three unless `--mesh` says otherwise), builds one case copy per mesh and core
+count with the mesh symlinked to the shared copy, writes the hierarchical
+decomposition into each copy's `system/include/caseDefinition`, and renders a
+SLURM script beside it. Add `--submit` to queue them straight away, or submit
+the generated `run.slurm` files yourself.
+
+Both downloads happen once and are reused, so a second invocation against the
+same workspace touches the network not at all. If you drop the scripts into a
+case checkout of your own, that case is used instead of the upstream one --
+so local modifications are never silently replaced.
 
 The options worth knowing about:
 
 | Option | What it does |
 | --- | --- |
+| `--case DIR` | Copies the runs from a case of your own instead of the upstream one. |
+| `--download-case` | Forces the upstream case even when the script sits in a case checkout. |
 | `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. |
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. |
 | `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. |
