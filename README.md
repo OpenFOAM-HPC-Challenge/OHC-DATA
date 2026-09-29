@@ -38,6 +38,8 @@ The options worth knowing about:
 
 | Option | What it does | Default |
 | --- | --- | --- |
+| `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` names them all. | all three -- `coarse,medium,fine` |
+| `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
 | `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
 | `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
 | `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. | the built-in template |
