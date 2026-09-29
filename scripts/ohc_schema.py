@@ -45,7 +45,7 @@ OPTIONAL = "optional"
 SUPPLIED = "supplied"
 DERIVED = "derived"
 
-# Nominal cell count per mesh resolution, matching MESH_CELLS in benchmark.py
+# Nominal cell count per mesh resolution, matching MESH_CELLS in common.py
 # and OHCParser.get_cells().
 MESH_CELLS = {"coarse": 65000000, "medium": 110000000, "fine": 236000000}
 

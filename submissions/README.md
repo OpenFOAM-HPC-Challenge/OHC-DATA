@@ -41,7 +41,7 @@ folder names -- they order the directory for humans, and that is all.
 level, and most submissions will not have one.  It exists for the case where
 the *same* machine is measured more than once and the results are separate
 findings rather than a second draft: a different rank placement, a different
-decomposition, a re-run after a fix.  `benchmark.py --postProcess --run NAME`
+decomposition, a re-run after a fix.  `postprocess.py --run NAME`
 writes one, and each run folder carries its own `meta.yaml` -- which matters
 when the configuration changed something the hardware description records,
 such as the cores actually used per node.  Files in different run folders may
@@ -49,7 +49,7 @@ share a name; nothing is read out of the folder names here either.
 
 **Every machine carries a `meta.yaml`.**  It describes the hardware the numbers
 next to it were measured on -- CPU, memory, interconnect, node TDP -- in the
-contributor's own words.  `benchmark.py --postProcess` writes it as a copy of
+contributor's own words.  `postprocess.py` writes it as a copy of
 the `meta.yaml` in the workspace it was driven with, comments and all; for a
 hand-assembled submission, copy [`meta.yaml.template`](meta.yaml.template) and
 fill it in.  The nearest one wins: a run folder's `meta.yaml` describes that
@@ -82,20 +82,21 @@ therefore have no single machine to describe.
 
 ## Producing the files
 
-`scripts/benchmark.py --postProcess --format json` harvests a finished
-benchmark workspace straight into that layout:
+`scripts/postprocess.py --format json` harvests a finished benchmark
+workspace -- one set up by `scripts/benchmark.py` -- straight into that
+layout:
 
 ```sh
-./scripts/benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer \
-                       --format json
+./scripts/postprocess.py --workspace /scratch/$USER/occDrivAer \
+                         --format json
 ```
 
 Run from a clone of this repository, it writes into this directory, as
 `submissions/<date>_<handle>/<machine>/`, so the files are ready to commit.  (A
 copy of the script living outside a checkout has no such directory and falls
-back to `<workspace>/submissions/`; `--postprocess-out DIR` overrides either.)
+back to `<workspace>/submissions/`; `--out DIR` overrides either.)
 Fields the OpenFOAM logs cannot know -- your affiliation, the CPU model, the
-node TDP -- come from `<workspace>/meta.yaml`.  The first `--postProcess` run
+node TDP -- come from `<workspace>/meta.yaml`.  The first `postprocess.py` run
 of a workspace has none, so it writes a commented template there, names the
 fields only you can fill, and stops with a non-zero exit status rather than
 harvesting results nobody could attribute:
@@ -130,8 +131,8 @@ To put a second machine in the same submission, harvest its workspace with the
 same `--suffix` on the same day:
 
 ```sh
-./scripts/benchmark.py --postProcess --workspace /scratch/$USER/occDrivAer-hawk \
-                       --format json --suffix olenik --machine hawk
+./scripts/postprocess.py --workspace /scratch/$USER/occDrivAer-hawk \
+                         --format json --suffix olenik --machine hawk
 ```
 
 ## The preview plot
