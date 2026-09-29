@@ -16,6 +16,16 @@ collected as one dataset.
 Every result -- whole rounds and individual submissions alike -- is appended
 here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
 
+![Time-to-solution against core count, Hardware Track](assets/submissions_overview.svg)
+
+![Contributed runs per CPU family, stacked by generation](assets/submissions_overview_cpu.svg)
+
+Both are the Hardware Track overview plots of the challenge notebooks, drawn
+straight from `data/data.json` by `scripts/plot_overview.py` -- standard
+library only, like the rest of `scripts/`. The `overview-figures` workflow
+redraws and commits them whenever the dataset changes, so they never fall
+behind the data; `./scripts/plot_overview.py` redraws them locally.
+
 Neither round recorded a submission date, so every record of a round carries
 the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
 2026-06-29 for OHC2.
