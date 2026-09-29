@@ -1,0 +1,65 @@
+name: overview-figures
+
+# The two overview figures in the README are drawn from data/data.json, so
+# they go stale the moment a submission is appended.  Redraw them whenever the
+# dataset changes and commit the result, so the pictures in the README always
+# describe the data actually in the repository.
+#
+# append-submissions.yml commits data/data.json on the default branch, which
+# is what triggers this; the two never run at the same time, they run one
+# after the other.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'data/data.json'
+      - 'scripts/plot_overview.py'
+      - 'scripts/ohc_schema.py'
+  workflow_dispatch:            # manual redraw
+
+permissions:
+  contents: write
+
+concurrency:
+  group: overview-figures       # never two redraws racing for the same files
+  cancel-in-progress: false
+
+jobs:
+  figures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Draw the overview figures
+        run: ./scripts/plot_overview.py --outdir assets
+
+      - name: Commit them when they changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- assets/; then
+            echo "assets/ is unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/submissions_overview.svg \
+                  assets/submissions_overview_cpu.svg
+          git commit \
+            -m "assets: redraw the overview figures" \
+            -m "Drawn by overview-figures.yml from data/data.json at ${{ github.sha }}."
+          # Another commit may have landed while this one ran; rebase onto it
+          # rather than force the branch.  The retries live in an `if`, where
+          # `set -e` leaves a failing command to the loop instead of aborting.
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash origin "${GITHUB_REF_NAME}" \
+               && git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            echo "push attempt ${attempt} failed, retrying"
+            sleep 5
+          done
+          exit 1
