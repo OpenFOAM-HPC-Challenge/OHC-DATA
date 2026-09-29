@@ -3,6 +3,12 @@
 Results of the [OpenFOAM HPC Challenge](https://exafoam.eu/hpc-challenge/),
 collected as one dataset.
 
+- [Generating the submission data](#generating-the-submission-data)
+  - [1. Set the runs up](#1-set-the-runs-up)
+  - [2. Harvest the finished runs](#2-harvest-the-finished-runs)
+- [Contributing results](#contributing-results)
+- [The dataset](#the-dataset)
+
 ## Generating the submission data
 
 `scripts/` holds a pair of drivers for the occDrivAer static-mesh case:
