@@ -58,10 +58,13 @@ INK_TEXT = "#202124"
 INK_MUTED = "#5f6368"
 SURFACE = "#ffffff"
 
-# One hue per CPU generation, ordered so neighbouring generations of the same
-# family stay distinguishable.  Colour-blind-safe qualitative set.
-PALETTE = ["#4477aa", "#ee6677", "#228833", "#ccbb44",
-           "#66ccee", "#aa3377", "#bbbbbb", "#ee8866", "#44bb99"]
+# One hue per CPU generation.  Colour-blind-safe qualitative set (Paul Tol's
+# bright and muted schemes combined), long enough that the generations present
+# in the dataset never have to share a colour -- with fourteen of them already,
+# a shorter palette wraps and two different generations come out identical.
+PALETTE = ["#4477aa", "#ee6677", "#228833", "#ccbb44", "#66ccee", "#aa3377",
+           "#ee8866", "#44bb99", "#332288", "#999933", "#882255", "#ddcc77",
+           "#117733", "#cc6677", "#88ccee", "#771122", "#6699cc", "#994455"]
 
 FONT = ("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
         "'Helvetica Neue', Arial, sans-serif")
@@ -209,6 +212,22 @@ def render_scatter(points):
 # Figure 2: contributions per CPU family, stacked by generation
 # --------------------------------------------------------------------------- #
 
+def nice_step(top, target=9):
+    """A 1-2-5 grid step giving roughly `target` gridlines up to `top`.
+
+    A fixed step does not survive the dataset growing: at 191 runs a step of
+    five draws forty gridlines and the chart disappears behind them.
+    """
+    if top <= 0:
+        return 1
+    raw = top / float(target)
+    decade = 10.0 ** math.floor(math.log10(raw))
+    for multiple in (1, 2, 2.5, 5, 10):
+        if raw <= multiple * decade:
+            return max(int(multiple * decade), 1)
+    return max(int(10 * decade), 1)
+
+
 def cpu_counts(records):
     """{family: {generation: count}} over the Hardware Track."""
     counts = collections.defaultdict(collections.Counter)
@@ -243,15 +262,15 @@ def render_cpu_histogram(records):
     height = pad["top"] + plot_h + pad["bottom"]
 
     tallest = max((sum(counts[f].values()) for f in families), default=1)
-    y_hi = max(5 * math.ceil(tallest / 5.0), 5)
+    step = nice_step(tallest)
+    y_hi = max(step * int(math.ceil(tallest / float(step))), step)
 
     def sy(value):
         return pad["top"] + plot_h * (1.0 - value / float(y_hi))
 
     out = []
 
-    # Horizontal grid in steps of 5, plus the count axis.
-    step = 5 if y_hi <= 50 else 10
+    # Horizontal grid, plus the count axis.
     for value in range(0, y_hi + 1, step):
         y = sy(value)
         out.append('<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" '
