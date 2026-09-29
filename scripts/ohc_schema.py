@@ -221,6 +221,31 @@ ENVELOPE_RECORDS = ("simulations", "records", "data", "results")
 
 SCHEMA_ID = "ohc-submission/v1"
 
+# The machine description that sits next to an envelope submission.  A
+# submission directory holds one folder per machine, and each of those carries
+# the metadata of that machine -- what `benchmark.py --postProcess` writes as a
+# copy of its workspace's own meta.yaml, so the hardware behind the numbers
+# stays readable next to them.  The alternative spellings are accepted because
+# a contributor who simply copies the workspace file over should not be stopped
+# by its name (submissionMeta.yaml is what older workspaces call it).
+META_NAMES = ("meta.yaml", "meta.yml", "submissionMeta.yaml")
+
+# meta.yaml key -> the field of the JSON envelope's `meta` block that must
+# agree with it.  The JSON is what gets ingested; the YAML is provenance, so a
+# disagreement is a warning that the two drifted apart, not an error.
+META_YAML_FIELDS = [
+    ("participant_id", "Contributor ID"),
+    ("affiliation", "Contributor Affiliation"),
+    ("track", "Track"),
+    ("cpu_family", "CPU Family"),
+    ("cpu_model", "CPU Model"),
+    ("cpu_submodel", "CPU Submodel"),
+    ("cpu_generation", "CPU Generation"),
+    ("last_level_cache", "Last-Level Cache"),
+    ("network_interconnect", "Network Interconnect"),
+    ("storage_file_system", "Storage File-System"),
+]
+
 
 # --------------------------------------------------------------------------- #
 # Diagnostics
@@ -449,7 +474,7 @@ def learn_enums(dataset_paths):
 # Loading a submission file
 # --------------------------------------------------------------------------- #
 
-def load_submission(path):
+def load_submission(path, root=None):
     """Read a submission file into (records, issues).
 
     Accepts three shapes, so a submission can be hand-written or generated:
@@ -458,6 +483,12 @@ def load_submission(path):
         {record}                               single record
         {"schema": ..., "meta": {...},         envelope; `meta` supplies the
          "simulations": [ {record}, ... ]}     fields shared by every run
+
+    The envelope shape is one machine's scaling sweep, so it is also checked
+    against the machine's ``meta.yaml`` (see ``check_meta_yaml``), searched up
+    to `root` -- the submissions directory.  The other two shapes are what the
+    aggregate round archives use, where a single machine description would be
+    meaningless, and are left alone.
     """
     issues = []
     try:
@@ -486,6 +517,7 @@ def load_submission(path):
             if not isinstance(meta, dict):
                 issues.append(error(path, "'meta' must be an object"))
                 meta = {}
+            issues.extend(check_meta_yaml(path, meta, path, root))
     else:
         return [], [error(path, "must contain an object or a list of objects")]
 
@@ -504,6 +536,144 @@ def load_submission(path):
         merged.update(entry)
         records.append((where, merged))
     return records, issues
+
+
+# --------------------------------------------------------------------------- #
+# The machine's meta.yaml
+# --------------------------------------------------------------------------- #
+
+# Subdirectories of submissions/ that hold JSON which is not a submission:
+# the sample, which must never reach the dataset.
+NOT_SUBMISSIONS = ("example",)
+
+
+def discover_submissions(submissions_dir):
+    """Every submission file under `submissions_dir`, at any depth.
+
+    A submission is a folder -- `<date>_<handle>/<machine>/` -- so finding one
+    means walking, not globbing a flat directory.  NOT_SUBMISSIONS is skipped:
+    the sample is checked on its own, never as a contribution.
+    """
+    found = []
+    for root, dirs, names in os.walk(submissions_dir):
+        dirs[:] = sorted(d for d in dirs
+                         if os.path.relpath(os.path.join(root, d),
+                                            submissions_dir).split(os.sep)[0]
+                         not in NOT_SUBMISSIONS)
+        found.extend(os.path.join(root, n)
+                     for n in names if n.endswith(".json"))
+    return sorted(found)
+
+
+def load_meta_yaml(path):
+    """Read a flat ``key: value`` YAML mapping.
+
+    Deliberately tiny, and the same reader `benchmark.py` writes with: the
+    metadata file is flat, and depending on PyYAML would break this
+    repository's standard-library-only contract.  Nested YAML is not rejected,
+    it is simply not understood -- an indented line is skipped.
+    """
+    meta = {}
+    with open(path) as handle:
+        for line in handle:
+            if line[:1] in (" ", "\t"):        # not a top-level key
+                continue
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or ":" not in stripped:
+                continue
+            key, value = stripped.split(":", 1)
+            value = value.strip()
+            if (value[:1] in ('"', "'") and value[-1:] == value[:1]
+                    and len(value) > 1):
+                value = value[1:-1]
+            meta[key.strip()] = value
+    return meta
+
+
+def meta_search_dirs(path, root=None):
+    """The directories a submission's meta.yaml may live in, nearest first.
+
+    The machine folder's own meta.yaml wins, then the submission folder's --
+    so a submission covering one machine may keep a single meta.yaml at its
+    top instead of one per folder.  The walk stops *below* `root`, the
+    submissions directory: one contributor's metadata must never be read as
+    another's, and a file dropped straight into submissions/ has nowhere of
+    its own to describe, which is what the layout in submissions/README.md
+    exists to avoid.
+
+    Outside `root` (a contributor validating a file in their workspace) only
+    the file's own directory is looked at, since there is no submission folder
+    to bound the walk.
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    if not root:
+        return [directory]
+    root = os.path.abspath(root)
+    if directory == root:
+        return []                   # straight in submissions/: no folder of
+                                    # its own, so nothing describes it
+    if not directory.startswith(root + os.sep):
+        return [directory]          # somewhere else entirely
+    dirs = []
+    while directory.startswith(root + os.sep):
+        dirs.append(directory)
+        directory = os.path.dirname(directory)
+    return dirs
+
+
+def find_meta_yaml(path, root=None):
+    """The meta.yaml governing submission `path`, or None."""
+    for directory in meta_search_dirs(path, root):
+        for name in META_NAMES:
+            candidate = os.path.join(directory, name)
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
+def check_meta_yaml(path, meta_block, where, root=None):
+    """Check that `path`'s machine description is there and agrees with it.
+
+    An envelope submission is one machine's scaling sweep, so the machine it
+    ran on has to be described next to it; a missing meta.yaml is an error.
+    What it says is then compared with the `meta` block of the JSON, which is
+    the copy that actually reaches data/data.json -- the two disagreeing means
+    one of them was edited alone, which is worth a warning.
+    """
+    meta_path = find_meta_yaml(path, root)
+    if meta_path is None:
+        return [error(where, "no meta.yaml next to it: every machine in a "
+                             "submission carries one, describing the hardware "
+                             "the runs were made on. `benchmark.py "
+                             "--postProcess` writes it; see "
+                             "submissions/README.md")]
+
+    shown = os.path.basename(meta_path)
+    try:
+        meta_yaml = load_meta_yaml(meta_path)
+    except OSError as exc:
+        return [error(where, "%s cannot be read: %s" % (shown, exc))]
+    if not meta_yaml:
+        return [error(where, "%s has no 'key: value' fields" % shown)]
+
+    issues = []
+    placeholders = sorted(k for k, v in meta_yaml.items()
+                          if str(v).startswith("FIXME"))
+    if placeholders:
+        issues.append(warning(where, "%s still has placeholder values: %s"
+                                     % (shown, _listing(placeholders))))
+
+    for key, field in META_YAML_FIELDS:
+        theirs, ours = meta_yaml.get(key), meta_block.get(field)
+        if (is_missing(theirs) or is_missing(ours)
+                or str(theirs).startswith("FIXME")):
+            continue
+        if str(theirs).strip().lower() != str(ours).strip().lower():
+            issues.append(warning(
+                where, "%s says %s: %s, the submission says %s: %s"
+                       % (shown, key, json.dumps(str(theirs)), field,
+                          json.dumps(str(ours)))))
+    return issues
 
 
 # --------------------------------------------------------------------------- #

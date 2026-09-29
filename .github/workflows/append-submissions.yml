@@ -62,6 +62,11 @@ jobs:
 
       - name: Append every submission the ledger has not seen
         id: append
+        # This fails, appending nothing, when data/data.json has lost records
+        # the ledger already accounts for -- a deleted or hand-truncated
+        # dataset.  Restore the dataset rather than re-running: a file the
+        # ledger lists is never appended again, so an append on top of the
+        # loss would make it permanent.  See check_ledger() in the script.
         env:
           STAMP_OHC: ${{ steps.stamp.outputs.ohc }}
           STAMP_DATE: ${{ steps.stamp.outputs.date }}

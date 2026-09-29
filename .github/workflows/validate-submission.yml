@@ -10,6 +10,8 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'submissions/**.json'
+      - 'submissions/**/meta.yaml'
+      - 'submissions/**/meta.yml'
       - 'data/data.json'
       - 'scripts/ohc_schema.py'
       - 'scripts/validate_submission.py'
@@ -59,6 +61,19 @@ jobs:
             "origin/${BASE_REF}...HEAD" \
             -- 'submissions/*.json' ':(exclude)submissions/example/*' \
             > changed.txt
+          # A machine's meta.yaml is checked against the JSON next to it, so a
+          # pull request that only corrects the hardware description still gets
+          # that machine's submissions re-validated.
+          git diff --name-only --diff-filter=d \
+            "origin/${BASE_REF}...HEAD" \
+            -- 'submissions/*.yaml' 'submissions/*.yml' \
+               ':(exclude)submissions/example/*' \
+               ':(exclude)submissions/meta.yaml.template' \
+            | while read -r meta; do
+                find "$(dirname "${meta}")" -name '*.json' -type f
+              done >> changed.txt
+          sort -u -o changed.txt changed.txt
+          sed -i '/^$/d' changed.txt
           echo "count=$(wc -l < changed.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
           echo "Changed submission files:"
           cat changed.txt
@@ -72,8 +87,10 @@ jobs:
           python3 scripts/validate_submission.py --self-check
           # The sample is what contributors copy, so it has to stay valid --
           # checked here rather than as a submission, since it is neither
-          # plotted nor appended.
-          python3 scripts/validate_submission.py submissions/example/*.json
+          # plotted nor appended.  It is laid out like a real submission
+          # (<date>_<handle>/<machine>/), hence the recursive search.
+          find submissions/example -name '*.json' -type f -print0 \
+            | xargs -0 python3 scripts/validate_submission.py
 
       - name: Validate the submitted records
         id: validate
@@ -93,7 +110,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ "${{ steps.changed.outputs.count }}" -eq 0 ]; then
-            printf '## Submission validation\n\nNo submission files changed in this pull request.\n' > report.md
+            printf '## Submission validation\n\nNo submission files to check: nothing was added or modified under `submissions/` (outside `example/`) in this pull request. A submission is a folder -- `submissions/<date>_<handle>/<machine>/` -- holding the machine'"'"'s `meta.yaml` and its result files.\n' > report.md
             exit 0
           fi
           stamp=()

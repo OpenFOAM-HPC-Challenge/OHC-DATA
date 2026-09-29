@@ -1,0 +1,44 @@
+# OHC-1 submission metadata for benchmark.py --postProcess.
+# Everything that cannot be read out of the OpenFOAM logs lives here;
+# edit it once, then re-run --postProcess as often as you like.
+
+test_case: Test case 2a
+track: Hardware Track
+ohc_round: 2
+participant_id: FIXME
+lastname: FIXME
+firstname: FIXME
+affiliation: FIXME
+email: FIXME
+legend_suffix: FIXME
+
+software_optimization_category: Other
+
+# --- hardware description (per node) ------------------------------
+# Name of the machine.  It becomes the folder this machine's results
+# land in, so one submission can cover several of them.  'auto' takes
+# the name from the scheduler (SLURM_CLUSTER_NAME, LMOD_SYSTEM_NAME) or
+# the hostname, '-' means no machine folder at all, and --machine wins
+# over whatever stands here.
+machine: auto
+server_type: CPU
+cpu: FIXME e.g. Intel Xeon Platinum 8368
+cpu_family: FIXME e.g. Intel
+cpu_model: FIXME e.g. Xeon
+cpu_submodel: FIXME e.g. 8368
+cpu_generation: FIXME e.g. Ice Lake (3rd-gen)
+cpu_memory_bandwidth_gb_s: "-"
+gpu: "-"
+gpu_memory_bandwidth_gb_s: "-"
+gpus_per_node: 0
+memory_type: FIXME e.g. DDR5-4800
+memory_capacity_per_node: FIXME e.g. 256GB
+last_level_cache: FIXME e.g. 105MB
+network_interconnect: FIXME e.g. InfiniBand HDR200
+network_topology: FIXME e.g. Fat-tree
+storage_device: FIXME e.g. SSD
+storage_file_system: FIXME e.g. Lustre
+
+# Thermal design power of one *node* (all sockets + accelerators) in W.
+# Used to derive the per-simulation TDP and the energy to solution.
+tdp_per_node_w: 0

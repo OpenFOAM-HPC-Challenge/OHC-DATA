@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Validate contributed OHC result files against the repository schema.
 
-Run it on the files a pull request adds under ``submissions/``::
+Run it on what a pull request adds under ``submissions/`` -- a file, the
+machine folder it sits in, or nothing at all to check every submission in the
+repository::
 
-    ./scripts/validate_submission.py submissions/42_OHC_DrivAer_coarse.json
+    ./scripts/validate_submission.py
+    ./scripts/validate_submission.py submissions/20260921_olenik
+    ./scripts/validate_submission.py submissions/20260921_olenik/hk2n/OHC1_DrivAer_hk2n_110M.json
 
 It reports, per record, every field that is missing, mistyped, out of range or
 inconsistent with its neighbours, and exits non-zero when any of those is an
@@ -32,6 +36,10 @@ import ohc_schema as schema
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATASET = os.path.join(REPO, "data", "data.json")
+# A submission's machine description is looked up next to the file and then up
+# its own folder; the walk stops here, so it can never read the metadata of a
+# neighbouring contributor's submission.
+SUBMISSIONS = os.path.join(REPO, "submissions")
 # data/data.json is the single source of truth, so it is the only file
 # enum-learning and the self-check read.  The raw round archives
 # (data/data_OHC1.json) are kept for provenance but add nothing here: their
@@ -54,8 +62,28 @@ def supplied_fields(ohc=None, submission_date=None):
     return supplied
 
 
+def expand_paths(paths, submissions_dir=SUBMISSIONS):
+    """Resolve the command line to the submission files it means.
+
+    A submission is a directory -- ``<date>_<handle>/<machine>/`` -- so a
+    directory argument means every result file under it, and no argument at
+    all means every submission in the repository.  Both matter because a
+    submission is no longer a single file anyone can name: a glob that matched
+    nothing used to report "0 record(s)" and exit 0, which reads as a pass.
+    """
+    if not paths:
+        return schema.discover_submissions(submissions_dir)
+    resolved = []
+    for path in paths:
+        if os.path.isdir(path):
+            resolved.extend(schema.discover_submissions(path))
+        else:
+            resolved.append(path)
+    return resolved
+
+
 def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None,
-                   supplied=None):
+                   supplied=None, submissions_dir=SUBMISSIONS):
     """Validate every path.  Returns a report dict.
 
     `ignore_keys` lists record keys that must not count as duplicates -- the
@@ -82,7 +110,7 @@ def validate_files(paths, dataset_path=DATASET, learn=True, ignore_keys=None,
     files = []
     seen_in_this_run = {}
     for path in paths:
-        raw_records, issues = schema.load_submission(path)
+        raw_records, issues = schema.load_submission(path, submissions_dir)
         accepted = []
         for where, raw in raw_records:
             record, record_issues = schema.validate_record(
@@ -144,7 +172,11 @@ def markdown_report(report, title="Submission validation"):
     lines = ["## %s" % title, ""]
 
     if not report["files"]:
-        lines.append("No submission files changed in this pull request.")
+        lines.append("No submission files to check: nothing was added or "
+                     "modified under `submissions/` (outside `example/`) in "
+                     "this pull request. A submission is a folder -- "
+                     "`submissions/<date>_<handle>/<machine>/` -- holding the "
+                     "machine's `meta.yaml` and its result files.")
         return "\n".join(lines) + "\n"
 
     if report["errors"]:
@@ -318,10 +350,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__.split("\n")[0],
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("paths", nargs="*", metavar="FILE",
-                        help="submission files to validate")
+    parser.add_argument("paths", nargs="*", metavar="PATH",
+                        help="submission files or folders to validate; with "
+                             "none, every submission under --submissions")
     parser.add_argument("--dataset", default=DATASET,
                         help="global dataset checked for duplicates "
+                             "(default: %(default)s)")
+    parser.add_argument("--submissions", default=SUBMISSIONS, metavar="DIR",
+                        help="submissions directory: searched when no PATH is "
+                             "given, and the boundary of the meta.yaml lookup "
                              "(default: %(default)s)")
     parser.add_argument("--markdown", metavar="FILE",
                         help="write the report as Markdown as well")
@@ -364,10 +401,23 @@ def main(argv=None):
 
     missing = [p for p in args.paths if not os.path.exists(p)]
     if missing:
-        parser.error("no such file: %s" % ", ".join(missing))
+        parser.error("no such file or directory: %s" % ", ".join(missing))
+
+    paths = expand_paths(args.paths, args.submissions)
+    if not paths:
+        parser.error(
+            "no submission files to check%s. A submission is a folder -- "
+            "submissions/<date>_<handle>/<machine>/ -- so name a file, name a "
+            "folder, or give nothing at all to check every submission under %s"
+            % (" in %s" % ", ".join(args.paths) if args.paths else "",
+               args.submissions))
+    if not args.paths:
+        print("checking %d submission file(s) under %s\n"
+              % (len(paths), args.submissions))
 
     supplied = supplied_fields(args.ohc, args.submission_date)
-    report = validate_files(args.paths, args.dataset, supplied=supplied)
+    report = validate_files(paths, args.dataset, supplied=supplied,
+                            submissions_dir=args.submissions)
     print_report(report)
 
     if args.markdown:

@@ -15,6 +15,14 @@ re-serialised -- so the diff of a merged submission is exactly the lines it
 adds.  ``--update`` is the exception: it drops the rows a previously appended
 file contributed and re-appends them, which does rewrite the whole file.
 
+Because a file the ledger lists is never appended again, the ledger is only
+safe while the dataset keeps the rows those files put there.  Every run
+therefore checks that first, and refuses to append when records it has already
+accounted for have gone missing -- appending on top of a truncated or deleted
+data.json would make the loss permanent, which is exactly how OHC-1's 237 rows
+were lost once.  ``--allow-missing-rows`` is the override for a removal that
+was intended.
+
 A submission need not carry ``OHC`` or ``Submission Date``: the merge supplies
 them with ``--ohc`` (the current iteration, when the pull request is opted in by
 its label) and ``--submission-date`` (the merge date).  A submission that does
@@ -25,6 +33,7 @@ Standard library only, like the rest of scripts/.
 """
 
 import argparse
+import collections
 import glob
 import hashlib
 import json
@@ -67,25 +76,101 @@ def relative(path):
     return os.path.relpath(os.path.abspath(path), REPO).replace(os.sep, "/")
 
 
-# Subdirectories of submissions/ that hold JSON which is not a submission.
-NOT_SUBMISSIONS = ("example",)
+def shown(path):
+    """`path` for a message: repository-relative, but never a '../..' chain."""
+    rel = relative(path)
+    return path if rel.startswith("../") else rel
 
 
-def discover(submissions_dir):
-    """Every submission under submissions/, at any depth.
+# One walker for the whole repository, in the schema module: what counts as a
+# submission -- a folder per machine, the sample excluded -- is the schema's
+# business, and validate_submission.py needs the same answer.
+discover = schema.discover_submissions
 
-    Contributors group their files in a folder of their own, so this recurses
-    -- except into the directories listed in NOT_SUBMISSIONS, which hold the
-    sample submission that must never reach the dataset.
+
+Gap = collections.namedtuple("Gap", "present recorded lost gaps")
+
+
+def ledger_gap(appended, dataset_path):
+    """Compare what the ledger claims is in the dataset with what is there.
+
+    Returns a `Gap`: how many records the dataset holds (None when the file
+    cannot be read at all), how many distinct record keys the ledger accounts
+    for, how many of those are missing, and, per ledger entry, how many of its
+    keys are gone.
+
+    Entries written before keys were recorded contribute nothing, so an old
+    ledger cannot raise a false alarm.  Several entries may record the same
+    keys -- a round archive re-submitted under a new name, say -- which is why
+    this compares keys rather than counting rows: the counts would add up to
+    more than the dataset ever held.
     """
-    found = []
-    for root, dirs, names in os.walk(submissions_dir):
-        dirs[:] = sorted(d for d in dirs
-                         if os.path.relpath(os.path.join(root, d),
-                                            submissions_dir).split(os.sep)[0]
-                         not in NOT_SUBMISSIONS)
-        found.extend(os.path.join(root, n) for n in names if n.endswith(".json"))
-    return sorted(found)
+    try:
+        records = schema.load_dataset(dataset_path)
+    except (OSError, ValueError):
+        records = None                  # unreadable: worse than empty
+    present = None if records is None else set(
+        schema.record_key(record) for record in records)
+
+    recorded, lost, gaps = set(), set(), {}
+    for key, entry in sorted(appended.items()):
+        keys = set(entry.get("keys", []))
+        recorded |= keys
+        missing = keys if present is None else keys - present
+        if missing:
+            gaps[key] = len(missing)
+            lost |= missing
+    return Gap(present=None if present is None else len(present),
+               recorded=len(recorded), lost=len(lost), gaps=gaps)
+
+
+def check_ledger(appended, dataset_path, ledger_path, allow_missing=False):
+    """Refuse to append onto a dataset that has lost already-merged rows.
+
+    The ledger makes the append idempotent: a file it lists is never appended
+    again.  That is only safe while the dataset keeps what those files put
+    there -- if rows go missing (a hand-edited data.json, a deleted file, a
+    bad merge), appending on top would quietly cement the loss, because
+    nothing will ever re-add them.  This is how OHC-1's 237 rows disappeared
+    once: data.json was deleted, and the next append rebuilt it from the one
+    submission the ledger had not seen yet.
+
+    Returns the number of missing records: 0 when the dataset is intact, and
+    with `allow_missing` the shortfall is reported but tolerated.
+    """
+    gap = ledger_gap(appended, dataset_path)
+    if not gap.gaps:
+        return 0
+
+    missing, gaps = gap.lost, gap.gaps
+    dataset = shown(dataset_path)
+    if gap.present is None:
+        where = "it cannot be read"
+    elif not gap.present:
+        where = ("it is empty or absent, and the ledger accounts for %d "
+                 "record(s)" % gap.recorded)
+    else:
+        where = ("it holds %d record(s), the ledger accounts for %d"
+                 % (gap.present, gap.recorded))
+    label = "warning" if allow_missing else "error"
+    out = sys.stdout if allow_missing else sys.stderr
+    print("%s: %d record(s) that %s says were appended are missing from %s -- "
+          "%s." % (label, missing, shown(ledger_path), dataset, where),
+          file=out)
+    for key, count in sorted(gaps.items()):
+        print("         %-45s %d row(s) missing" % (key, count), file=out)
+    if allow_missing:
+        print("         --allow-missing-rows given: appending anyway.",
+              file=out)
+        return 0
+    print("       Nothing was appended: a file the ledger lists is never "
+          "appended again, so adding to the dataset now would make the loss "
+          "permanent.", file=out)
+    print("       Restore the dataset (git show <commit>:%s), or -- if those "
+          "rows were dropped on purpose -- remove the ledger entries that "
+          "claim them and re-append those files.  --allow-missing-rows "
+          "appends regardless." % dataset, file=out)
+    return missing
 
 
 def rewrite_dataset(path, records):
@@ -123,6 +208,13 @@ def main(argv=None):
     parser.add_argument("--update", action="store_true",
                         help="re-append a file whose contents changed since it "
                              "was merged; rewrites the whole dataset")
+    parser.add_argument("--allow-missing-rows", action="store_true",
+                        dest="allow_missing_rows",
+                        help="append even though the dataset has lost records "
+                             "the ledger says were already appended. Only for "
+                             "a deliberate removal -- otherwise the rows are "
+                             "gone for good, since a file the ledger lists is "
+                             "never appended again")
     parser.add_argument("--dry-run", action="store_true", dest="dry_run",
                         help="report what would happen and change nothing")
     parser.add_argument("--summary", metavar="FILE",
@@ -138,6 +230,13 @@ def main(argv=None):
 
     ledger = load_ledger(args.ledger)
     appended = ledger["appended"]
+
+    # Before anything is written: is the dataset still holding everything the
+    # ledger says was put there?  Appending onto a dataset that has lost rows
+    # would cement the loss.
+    if check_ledger(appended, args.dataset, args.ledger,
+                    args.allow_missing_rows):
+        return 1
 
     pending, superseded, unchanged = [], [], []
     for path in candidates:
