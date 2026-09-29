@@ -105,9 +105,8 @@ request.
 
 ## Contributing results
 
-1. Produce a JSON submission -- as above, or by hand.
-2. Check it locally: `./scripts/validate_submission.py submissions/<your file>.json`
-   (standard library only, nothing to install).
+1. Fork this repository
+2. Produce a JSON submission -- as described above, or manually.
 3. Open a pull request that adds it under `submissions/`.
 
 `submissions/README.md` documents the file format and every field;
@@ -121,17 +120,9 @@ and draws a plot of where the new runs land among the published ones. Merging it
 by hand. The append is keyed by the SHA-256 of each submission file in
 `data/submissions.lock.json`, so it never runs twice for the same file.
 
-A comment can only show an image it can fetch from a URL, so a pull request
-from this repository publishes the plot to an orphan `previews` branch --
-nothing but PNGs, rewritten to a single commit, never merged -- and links it as
-`github.com/<repo>/raw/previews/pr-<n>.png`. While the repository is private
-that URL resolves only for readers who already have access, because GitHub
-serves private content to authenticated sessions and its image proxy is not
-one; if the image does not appear inline, the plot is always attached to the
-run as an artifact and the comment links to it.
-
-A pull request from a fork cannot push here, so its plot goes to catbox.moe --
-but only while the repository is public. Uploading a private repository's data
-to a public image host would publish it, so that step is switched off until
-the repository is, and fork pull requests fall back to the artifact.
-
+A pull request is public and carries your name in the repository's history.
+Additionally, results can be submitted anonymously instead: send either the JSON files described here or the
+traditional Excel workbooks to Mark Wasserman (mawasserman@nvidia.com),
+Sergey Lesnik (sergey.lesnik@wikki-gmbh.de), or Gregor Olenik
+(<gregor.olenik@tum.de>), and one of them will add them to the dataset on your
+behalf. 
