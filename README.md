@@ -118,11 +118,3 @@ here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
 Neither round recorded a submission date, so every record of a round carries
 the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
 2026-06-29 for OHC2.
-
-`data/data_OHC1.json` is the raw round-1 file as originally published, kept for
-provenance only: its 237 runs are already in `data.json`, normalised and
-stamped with `OHC`/`Submission Date`, so it is an input archive rather than a
-source of truth. `scripts/rebuild_dataset.py` can still regenerate `data.json`
-from such round files, but it refuses to run once submissions have been
-appended -- which they have -- so the append flow is now the only path that
-writes the dataset.
