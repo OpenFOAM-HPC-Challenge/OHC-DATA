@@ -3,11 +3,22 @@
 Results of the [OpenFOAM HPC Challenge](https://exafoam.eu/hpc-challenge/),
 collected as one dataset.
 
+- [The dataset](#the-dataset)
 - [Generating the submission data](#generating-the-submission-data)
   - [1. Set the runs up](#1-set-the-runs-up)
   - [2. Harvest the finished runs](#2-harvest-the-finished-runs)
 - [Contributing results](#contributing-results)
-- [The dataset](#the-dataset)
+
+## The dataset
+
+`data/data.json` is the single source of truth: one record per simulation, the
+43 measured columns plus `OHC` (which round, 1 or 2) and `Submission Date`.
+Every result -- whole rounds and individual submissions alike -- is appended
+here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
+
+Neither round recorded a submission date, so every record of a round carries
+the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
+2026-06-29 for OHC2.
 
 ## Generating the submission data
 
@@ -114,13 +125,3 @@ but only while the repository is public. Uploading a private repository's data
 to a public image host would publish it, so that step is switched off until
 the repository is, and fork pull requests fall back to the artifact.
 
-## The dataset
-
-`data/data.json` is the single source of truth: one record per simulation, the
-43 measured columns plus `OHC` (which round, 1 or 2) and `Submission Date`.
-Every result -- whole rounds and individual submissions alike -- is appended
-here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
-
-Neither round recorded a submission date, so every record of a round carries
-the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
-2026-06-29 for OHC2.
