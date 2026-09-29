@@ -36,15 +36,15 @@ so local modifications are never silently replaced.
 
 The options worth knowing about:
 
-| Option | What it does |
-| --- | --- |
-| `--case DIR` | Copies the runs from a case of your own instead of the upstream one. |
-| `--download-case` | Forces the upstream case even when the script sits in a case checkout. |
-| `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. |
-| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. |
-| `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. |
-| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node. |
-| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. |
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
+| `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
+| `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. | the built-in template |
+| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
+| `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. | `doubling`, from `--start 1,1,1` |
+| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node. | no placement sweep; `--bind-object numa` |
+| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
 
 `./benchmark.py --help` lists the rest.
 
