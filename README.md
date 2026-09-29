@@ -3,31 +3,89 @@
 Results of the [OpenFOAM HPC Challenge](https://exafoam.eu/hpc-challenge/),
 collected as one dataset.
 
-## Contents
+## Generating the submission data
 
-| Path | What it is |
+`scripts/` holds a pair of drivers for the occDrivAer static-mesh case:
+`benchmark.py` sets the runs up, `postprocess.py` reads them back out again,
+and `common.py` is what the two share. Standard library only -- there is
+nothing to install.
+
+Both work on a *workspace*: one directory holding the downloaded meshes, one
+self-contained case copy per run, and the harvested result.
+
+```
+<workspace>/meshes/<mesh>/...               shared polyMesh, downloaded once
+<workspace>/runs/<mesh>/<nCores>/           one case copy per run
+<workspace>/submissionMeta.yaml             what the logs cannot know
+<workspace>/submissions/<date>_<suffix>/    the files you submit
+```
+
+### 1. Set the runs up
+
+`benchmark.py` copies the case it sits in, so place the three scripts in your
+occDrivAer case directory and run them from there:
+
+```sh
+cd /path/to/occDrivAer
+./benchmark.py --mesh coarse --ncores 128,256,512 \
+               --workspace /scratch/$USER/occDrivAer
+```
+
+That downloads the requested polyMesh resolutions from Zenodo (fine, medium
+and coarse -- all three unless `--mesh` says otherwise), builds one case copy
+per mesh and core count with the mesh symlinked to the shared copy, writes the
+hierarchical decomposition into each copy's `system/include/caseDefinition`,
+and renders a SLURM script beside it. Add `--submit` to queue them straight
+away, or submit the generated `run.slurm` files yourself.
+
+The options worth knowing about:
+
+| Option | What it does |
 | --- | --- |
-| `data/data.json` | The single source of truth: both rounds and every merged submission, 385 records. Everything is appended here. |
-| `data/data_OHC1.json` | Raw archive of round 1 as originally published, kept for provenance. Its runs are already in `data.json` (normalised, with `OHC`/`Submission Date` added), so it is an input, not a parallel source. |
-| `data/submissions.lock.json` | Which submission files have been appended, and what they contributed. |
-| `submissions/` | Contributed result files, at any depth (`submissions/example/` is a sample and is never ingested). |
-| `scripts/benchmark.py` | Sets up and harvests the occDrivAer benchmark runs. |
-| `scripts/validate_submission.py` | Checks a submission against the schema. |
-| `scripts/append_submissions.py` | Appends merged submissions to `data/data.json`. |
-| `scripts/rebuild_dataset.py` | Regenerates `data/data.json` from the raw round archives; superseded by the append flow and inert once submissions have been appended. |
-| `scripts/plot_submission.py` | Draws the preview plot a pull request shows. |
-| `scripts/ohc_schema.py` | The schema itself: fields, ranges, derived quantities. |
-| `Overview.ipynb` | Plots over `data/data.json`. |
+| `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. |
+| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. |
+| `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. |
+| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node. |
+| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. |
+
+`./benchmark.py --help` lists the rest.
+
+### 2. Harvest the finished runs
+
+Once the queue is through, `postprocess.py` reads the `logFiles/` and
+`postProcessing/` output back out of the same workspace:
+
+```sh
+./postprocess.py --workspace /scratch/$USER/occDrivAer --format json
+```
+
+The first invocation writes `<workspace>/submissionMeta.yaml` and stops. That
+file holds everything no OpenFOAM log can know: your participant ID,
+affiliation and e-mail, the CPU and memory description, the interconnect, and
+the per-node TDP the energy figures are derived from. Fill in its `FIXME`
+fields, then run the same command again.
+
+It then prints a scaling table per mesh and writes one submission per mesh to
+`<workspace>/submissions/<YYYYMMDD>_<suffix>/`, named after your participant
+ID and the cell count -- `07_OHC1_DrivAer_65M.json`. Runs that never reached
+the requested iteration count are harvested as well and marked partial, so a
+sweep can be inspected while the queue is still working through it.
+
+`--format yaml` (the default) writes the fuller document, including the force
+coefficient history, and `--format both` writes the two. The JSON is the one
+this repository ingests; copy it into `submissions/` and open the pull
+request.
 
 ## Contributing results
 
-1. Produce a JSON submission -- by hand, or with
-   `scripts/benchmark.py --postProcess --format json`.
+1. Produce a JSON submission -- as above, or by hand.
 2. Check it locally: `./scripts/validate_submission.py submissions/<your file>.json`
    (standard library only, nothing to install).
 3. Open a pull request that adds it under `submissions/`.
 
-`submissions/README.md` documents the file format and every field.
+`submissions/README.md` documents the file format and every field;
+`scripts/ohc_schema.py` is the schema itself -- fields, ranges and derived
+quantities -- and is what the validator checks against.
 
 Opening the pull request runs `validate-submission`, which reports each
 record's problems on the pull request, previews the rows that would be added,
@@ -55,7 +113,7 @@ the repository is, and fork pull requests fall back to the artifact.
 `data/data.json` is the single source of truth: one record per simulation, the
 43 measured columns plus `OHC` (which round, 1 or 2) and `Submission Date`.
 Every result -- whole rounds and individual submissions alike -- is appended
-here, and nothing reads from a second dataset.
+here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
 
 Neither round recorded a submission date, so every record of a round carries
 the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
