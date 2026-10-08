@@ -384,8 +384,24 @@ def _ignore(dirpath, names):
 
 def copy_case(src, dst):
     """Copy the pristine case into `dst` (excluding mesh / generated files)."""
-    shutil.copytree(src, dst, ignore=_ignore,
-                    symlinks=True, dirs_exist_ok=True)
+    for dirpath, dirnames, filenames in os.walk(src):
+        ignored = _ignore(dirpath, dirnames + filenames)
+        target = os.path.join(dst, os.path.relpath(dirpath, src))
+        os.makedirs(target, exist_ok=True)
+        subdirs = []
+        for name in dirnames + filenames:
+            if name in ignored:
+                continue
+            s, d = os.path.join(dirpath, name), os.path.join(target, name)
+            if os.path.islink(s):
+                if os.path.islink(d) or os.path.isfile(d):
+                    os.unlink(d)
+                os.symlink(os.readlink(s), d)
+            elif name in dirnames:
+                subdirs.append(name)
+            else:
+                shutil.copy2(s, d)
+        dirnames[:] = subdirs
 
 
 def link_polymesh(run_dir, polymesh):
