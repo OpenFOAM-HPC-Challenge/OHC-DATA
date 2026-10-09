@@ -9,7 +9,8 @@ Challenge occDrivAer case.  It
      is already a case, otherwise the upstream one, downloaded from the
      OpenFOAM HPC committee repository into ``<workspace>/case/``,
   1. downloads and extracts the requested polyMesh resolution(s)
-     (fine / medium / coarse) from Zenodo -- by default all three,
+     (fine / medium / coarse) from Zenodo -- by default all three -- or
+     copies in the existing mesh ``--polymesh`` names instead,
   2. builds one self-contained case copy per (mesh, nCores) combination under
      ``<workspace>/runs/<mesh>/<nCores>/``, with the polyMesh symlinked to a
      shared, downloaded-once copy,
@@ -43,6 +44,7 @@ Examples
 """
 
 import argparse
+import gzip
 import itertools
 import os
 import re
@@ -55,8 +57,9 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
-                    CASE_WEB_URL, MESHES, ZENODO_URL, add_shared_arguments,
-                    display_path, is_case, parse_posint_list, parse_start)
+                    CASE_WEB_URL, MESH_CELLS, MESHES, ZENODO_URL,
+                    add_shared_arguments, display_path, is_case,
+                    parse_posint_list, parse_start)
 
 # Optional: decomposition methods that need more than a coefficient triplet
 # (currently multiLevel) live in a sibling module.  Absent is fine -- the two
@@ -274,11 +277,32 @@ def download(url, dest):
     os.rename(part, dest)
 
 
+def has_points(path):
+    """True when `path` holds a mesh's points, as a polyMesh directory does."""
+    return any(os.path.isfile(os.path.join(path, name))
+               for name in ("points", "points.gz"))
+
+
+def mesh_cells(polymesh):
+    """The cell count in the header note of the mesh's owner file, or None.
+
+    OpenFOAM writes ``note "nPoints:... nCells:... ..."`` into that header,
+    which stays plain text even in a binary or compressed file.
+    """
+    for name, opener in (("owner", open), ("owner.gz", gzip.open)):
+        path = os.path.join(polymesh, name)
+        if os.path.isfile(path):
+            with opener(path, "rb") as f:
+                head = f.read(4096).decode("latin-1")
+            m = re.search(r"nCells:\s*(\d+)", head)
+            return int(m.group(1)) if m else None
+    return None
+
+
 def find_polymesh(root):
     """Locate a polyMesh directory (one containing 'points') under `root`."""
     for dirpath, dirnames, filenames in os.walk(root):
-        if os.path.basename(dirpath) == "polyMesh" and (
-                "points" in filenames or "points.gz" in filenames):
+        if os.path.basename(dirpath) == "polyMesh" and has_points(dirpath):
             return dirpath
     return None
 
@@ -319,11 +343,31 @@ def extract(tarball, destdir, locate=find_polymesh, what="polyMesh"):
     return found
 
 
-def prepare_mesh(mesh, meshes_dir):
-    """Download and extract one mesh, returning the shared polyMesh path.
+def mesh_files(polymesh):
+    """{file name: size} of a polyMesh directory, to tell two meshes apart."""
+    return {name: os.path.getsize(os.path.join(polymesh, name))
+            for name in os.listdir(polymesh)
+            if os.path.isfile(os.path.join(polymesh, name))}
 
-    A mesh already extracted into the workspace is reused, whether or not its
-    tarball is still there; only a missing one is downloaded.
+
+def copy_polymesh(src, dst):
+    """Copy the polyMesh `src` to `dst`. Atomic via .part, like download()."""
+    part = dst + ".part"
+    if os.path.exists(part):
+        shutil.rmtree(part)
+    size = sum(mesh_files(src).values())
+    print("  > copying %s (%.1f GB)" % (src, size / 1e9))
+    shutil.copytree(src, part)
+    os.rename(part, dst)
+    return dst
+
+
+def prepare_mesh(mesh, meshes_dir, polymesh=None):
+    """Provide one mesh in the workspace, returning the shared polyMesh path.
+
+    A mesh already there is reused, whether or not its tarball is still
+    around.  Otherwise the `polymesh` given by the user is copied in, or the
+    mesh is downloaded and extracted.
     """
     tarname, label = MESHES[mesh]
     print("[mesh] %s (%s cells)" % (mesh, label))
@@ -332,9 +376,15 @@ def prepare_mesh(mesh, meshes_dir):
     os.makedirs(extract_dir, exist_ok=True)
 
     existing = find_polymesh(extract_dir)
+    if existing and polymesh and mesh_files(existing) != mesh_files(polymesh):
+        sys.exit("error: the workspace already holds a different %s mesh, "
+                 "%s; remove it to copy --polymesh %s in instead"
+                 % (mesh, existing, polymesh))
     if existing:
-        print("  = already extracted: %s" % existing)
+        print("  = already in the workspace: %s" % existing)
         return existing
+    if polymesh:
+        return copy_polymesh(polymesh, os.path.join(extract_dir, "polyMesh"))
     download(ZENODO_URL.format(tarname), tarball)
     return extract(tarball, extract_dir)
 
@@ -559,6 +609,9 @@ examples:
   # Copy the runs from a case of your own rather than the upstream one
   ./benchmark.py --ncores 512 --case /path/to/my/occDrivAerStaticMesh
 
+  # Use a coarse mesh you already have instead of downloading it
+  ./benchmark.py --mesh coarse --ncores 512 --polymesh /path/to/polyMesh
+
   # Once the queue is done, harvest that workspace with the sibling script
   ./postprocess.py --workspace /scratch/$USER/occDrivAer
 """
@@ -588,6 +641,11 @@ def build_parser():
                         "the directory this script sits in when that is a "
                         "case, otherwise the upstream case, downloaded into "
                         "<workspace>/case)")
+    p.add_argument("--polymesh", metavar="DIR",
+                   help="existing polyMesh directory to copy into "
+                        "<workspace>/meshes instead of downloading the mesh; "
+                        "--mesh must name the one resolution it is "
+                        "(default: the Zenodo mesh)")
     p.add_argument("--download-case", action="store_true", dest="download_case",
                    help="always fetch the upstream case from the OpenFOAM HPC "
                         "committee repository, even when this script already "
@@ -689,6 +747,31 @@ def main(argv=None):
 
     if args.case and args.download_case:
         parser.error("--case names a local case; drop --download-case")
+
+    if args.polymesh:
+        if len(args.mesh) != 1:
+            parser.error("--polymesh is the mesh of one resolution; name it "
+                         "with --mesh fine, medium or coarse")
+        if not has_points(args.polymesh):
+            parser.error("--polymesh %s is not a polyMesh directory (no "
+                         "points or points.gz in it)" % args.polymesh)
+        args.polymesh = os.path.abspath(args.polymesh)
+        # The resolution names the results, so a mesh given under the wrong
+        # one would be harvested under the wrong cell count.
+        mesh, cells = args.mesh[0], mesh_cells(args.polymesh)
+        if cells is None:
+            print("warning: cannot read the cell count from the owner file "
+                  "of --polymesh %s; not confirmed to be the %s mesh"
+                  % (args.polymesh, mesh), file=sys.stderr)
+        elif abs(cells / MESH_CELLS[mesh] - 1) > 0.1:
+            closest = min(MESH_CELLS,
+                          key=lambda m: abs(cells / MESH_CELLS[m] - 1))
+            hint = ("it looks like --mesh %s" % closest
+                    if abs(cells / MESH_CELLS[closest] - 1) <= 0.1
+                    else "it matches none of the resolutions")
+            parser.error("--polymesh %s has %d cells, not the %s mesh "
+                         "(%dM); %s" % (args.polymesh, cells, mesh,
+                                        MESH_CELLS[mesh] / 1e6, hint))
 
     if args.postprocess:
         parser.error("--postProcess has moved into its own script; run "
@@ -866,7 +949,7 @@ def main(argv=None):
 
     prepared = []
     for mesh in args.mesh:
-        polymesh = prepare_mesh(mesh, meshes_dir)
+        polymesh = prepare_mesh(mesh, meshes_dir, args.polymesh)
 
         for spec in runs:
             ncores = spec["ncores"]

@@ -63,7 +63,9 @@ the account, partition, time limit and environment your site needs, then run
 the same command again to re-render every `run.slurm` from it.
 
 Both downloads happen once and are reused, so a second invocation against the
-same workspace touches the network not at all. If you drop the scripts into a
+same workspace touches the network not at all. A mesh you already have can be
+copied into the workspace instead: `--polymesh DIR` names its `polyMesh`
+directory, and `--mesh` the one resolution it is. If you drop the scripts into a
 case checkout of your own, that case is used instead of the upstream one --
 so local modifications are never silently replaced.
 
@@ -74,6 +76,7 @@ The options worth knowing about:
 | `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` names them all. | all three -- `coarse,medium,fine` |
 | `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
 | `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
+| `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to name its single resolution, which the cell count in its `owner` header is checked against. | the Zenodo mesh |
 | `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
 | `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
