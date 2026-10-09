@@ -17,11 +17,15 @@ Challenge occDrivAer case.  It
   3. prepares the hierarchical decomposition for each nCores using the
      ``decompositionIter`` doubling strategy and writes it into that copy's
      ``system/include/caseDefinition``,
-  4. renders a SLURM batch script from ``--slurm-template``, or else from
+  4. derives tasks per node and the topology defaults of the multilevel
+     decomposition and the placement sweep from
+     ``<workspace>/node-topology.yaml``, a description of the compute node
+     detected on first use (``--probe-node`` rewrites it on a compute node),
+  5. renders a SLURM batch script from ``--slurm-template``, or else from
      ``<workspace>/slurm.template`` -- written from a built-in default on
      first use, for you to adapt -- that supplies the sbatch directives and
      calls ``Allrun``,
-  5. optionally submits every generated script with ``sbatch`` (``--submit``).
+  6. optionally submits every generated script with ``sbatch`` (``--submit``).
 
 Harvesting the finished runs back into a submission file is the job of the
 sibling script ``postprocess.py``; what the two share lives in ``common.py``.
@@ -60,6 +64,7 @@ from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
                     CASE_WEB_URL, MESH_CELLS, MESHES, ZENODO_URL,
                     add_shared_arguments, display_path, is_case,
                     parse_posint_list, parse_start)
+import topology
 
 # Optional: decomposition methods that need more than a coefficient triplet
 # (currently multiLevel) live in a sibling module.  Absent is fine -- the two
@@ -74,17 +79,27 @@ except ImportError:
 # Static configuration
 # --------------------------------------------------------------------------- #
 
-# Per-node topology defaults for each hwloc object a placement sweep can map
-# by, for the 2x AMD EPYC 9655 nodes this case is tuned on: 8 NUMA domains of
-# 24 cores, which are themselves 24 L3 slices (CCDs) of 8 cores.  Mapping by
-# NUMA alone packs ranks into the low L3 slices and leaves the rest idle, so
-# the finer object is often the one worth sweeping.  Override per site with
-# --domains-per-node / --cores-per-domain.
-BIND_OBJECTS = {
-    "numa":    {"domains_per_node": 8,  "cores_per_domain": 24},
-    "l3cache": {"domains_per_node": 24, "cores_per_domain": 8},
-    "package": {"domains_per_node": 2,  "cores_per_domain": 96},
-}
+# The hwloc objects a placement sweep can map by, and the node description
+# (node-topology.yaml) count each one comes from.  On chiplet CPUs several L3
+# slices share a NUMA domain, and mapping by NUMA alone packs ranks into the
+# low slices and leaves the rest idle, so the finer object is often the one
+# worth sweeping.  Override per run with --domains-per-node /
+# --cores-per-domain.
+BIND_OBJECTS = {"numa": "numa_per_node", "l3cache": "l3_per_node",
+                "package": "sockets"}
+
+
+def bind_object_topology(node, bind_object):
+    """Domains per node and physical cores per domain of `bind_object`."""
+    domains = node[BIND_OBJECTS[bind_object]]
+    return {"domains_per_node": domains,
+            "cores_per_domain": node["cores_per_node"] // domains}
+
+
+def node_tiers(node):
+    """The node description as the multilevel plugin's per-node tier counts."""
+    return {"socket": node["sockets"], "numa": node["numa_per_node"],
+            "cache": node["l3_per_node"]}
 
 # Directory that contains this script is treated as the pristine source case.
 CASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -680,9 +695,15 @@ def build_parser():
                         "(default: 1,1,1)")
     p.add_argument("--jobname", default="DrivAer_RANS",
                    help="base SLURM job name (default: DrivAer_RANS)")
-    p.add_argument("--ntasks-per-node", type=int, default=128, dest="tpn",
+    p.add_argument("--ntasks-per-node", type=int, default=None, dest="tpn",
                    metavar="N",
-                   help="tasks per node used to derive --nodes (default: 128)")
+                   help="tasks per node used to derive --nodes (default: "
+                        "cores_per_node of the node description)")
+    p.add_argument("--probe-node", action="store_true", dest="probe_node",
+                   help="only detect this machine's topology and write it to "
+                        "<workspace>/%s, replacing what is there; run it "
+                        "on a compute node, e.g. in an srun"
+                        % topology.NODE_FILE)
     p.add_argument("--end-time", type=int, dest="end_time", metavar="N",
                    help="override endTime (iteration count) in the run copies. "
                         "Useful for short placement/tuning runs; the challenge "
@@ -721,14 +742,14 @@ def build_parser():
                         "nodes than this")
     g.add_argument("--numa-per-node", "--domains-per-node", type=int,
                    default=None, dest="domains_per_node", metavar="N",
-                   help="domains of --bind-object per node (default: 8 for "
-                        "numa, 24 for l3cache, 2 for package)")
+                   help="domains of --bind-object per node (default: from "
+                        "the node description)")
     g.add_argument("--cores-per-numa", "--cores-per-domain", type=int,
                    default=None, dest="cores_per_domain", metavar="N",
-                   help="physical cores per domain (default: 24 for numa, 8 "
-                        "for l3cache, 96 for package). Above this the sweep "
-                        "binds to hardware threads instead of cores and asks "
-                        "SLURM for two tasks per core")
+                   help="physical cores per domain (default: from the node "
+                        "description). Above this the sweep binds to "
+                        "hardware threads instead of cores and asks SLURM for "
+                        "two tasks per core")
 
     if decompositionPlugin:
         decompositionPlugin.add_arguments(
@@ -777,12 +798,36 @@ def main(argv=None):
         parser.error("--postProcess has moved into its own script; run "
                      "'postprocess.py --workspace %s' instead" % args.workspace)
 
+    # The node description supplies every per-node default below: the
+    # workspace's node-topology.yaml, or -- the first time -- this machine,
+    # detected.
+    workspace = os.path.abspath(args.workspace)
+    node_path = os.path.join(workspace, topology.NODE_FILE)
+    if args.probe_node:
+        node, undetected = topology.detect()
+        os.makedirs(workspace, exist_ok=True)
+        topology.write(node_path, node, undetected)
+        print("wrote %s: %s, detected on %s"
+              % (node_path, topology.describe(node), node[topology.HOST_KEY]))
+        if undetected:
+            print("not detected, fill in: %s" % ", ".join(undetected))
+        return
+    fresh_node = not os.path.exists(node_path)
+    if fresh_node:
+        node, undetected = topology.detect()
+    else:
+        try:
+            node = topology.load(node_path)
+        except ValueError as exc:
+            sys.exit("error: %s" % exc)
+        undetected = []
+
     # Resolve the runs: --ncores directly, the product of --nnodes and
     # --ncores-per-node, or a NUMA placement sweep.  The paths are exclusive.
     # Each entry is a dict so a run carries its own node count, directory name
     # and placement -- a fixed-total-ranks sweep has identical nCores
     # throughout and could not be keyed on that.
-    tpn = args.tpn
+    tpn = args.tpn or node["cores_per_node"]
     runs = []
 
     if args.ranks_per_numa is not None:
@@ -790,7 +835,7 @@ def main(argv=None):
             parser.error("--ranks-per-domain cannot be combined with "
                          "--ncores/--ncores-per-node")
         # Topology follows the chosen object unless overridden explicitly.
-        topo = BIND_OBJECTS[args.bind_object]
+        topo = bind_object_topology(node, args.bind_object)
         if args.domains_per_node is None:
             args.domains_per_node = topo["domains_per_node"]
         if args.cores_per_domain is None:
@@ -894,11 +939,12 @@ def main(argv=None):
     if args.submit and not shutil.which("sbatch"):
         sys.exit("error: --submit given but 'sbatch' not found in PATH")
 
-    workspace = os.path.abspath(args.workspace)
     meshes_dir = os.path.join(workspace, "meshes")
     runs_dir = os.path.join(workspace, "runs")
     os.makedirs(meshes_dir, exist_ok=True)
     os.makedirs(runs_dir, exist_ok=True)
+    if fresh_node:
+        topology.write(node_path, node, undetected)
 
     if args.slurm_template:
         template_path, fresh_template = args.slurm_template, False
@@ -911,6 +957,15 @@ def main(argv=None):
     print("template:  %s%s" % (display_path(template_path, workspace),
                                " (written from the built-in default)"
                                if fresh_template else ""))
+    print("node:      %s (%s%s)" % (topology.describe(node),
+                                    display_path(node_path, workspace),
+                                    ", %sdetected on %s"
+                                    % ("just " if fresh_node else "",
+                                       node[topology.HOST_KEY])
+                                    if node.get(topology.HOST_KEY) else ""))
+    if undetected:
+        print("           not detected, fallbacks used: %s"
+              % ", ".join(undetected))
     print("meshes:    %s" % ", ".join(args.mesh))
     print("nCores:    %s" % ", ".join(str(n) for n in ncores_list))
     if args.end_time:
@@ -956,7 +1011,7 @@ def main(argv=None):
             plugin_spec = None
             if use_plugin:
                 plugin_spec = decompositionPlugin.spec_from_args(
-                    args, ncores, spec["nodes"])
+                    args, ncores, spec["nodes"], node_tiers(node))
                 # multiLevel replaces nHierarchical entirely; the triplet is
                 # still written so the dictionary stays valid if the method is
                 # switched back by hand.
@@ -993,7 +1048,15 @@ def main(argv=None):
         print("\nthe sbatch directives come from %s, just written from the "
               "built-in default -- adapt them to your site and re-run to "
               "re-render run.slurm." % template_path)
-    if args.submit and not fresh_template:
+    if fresh_node:
+        print("\nthe node description %s was just detected on %s -- check "
+              "that it describes the compute nodes (or rewrite it on one with "
+              "--probe-node) and re-run."
+              % (node_path, node[topology.HOST_KEY]))
+    unreviewed = [name for name, fresh in (("the template", fresh_template),
+                                           ("the node description",
+                                            fresh_node)) if fresh]
+    if args.submit and not unreviewed:
         print("\nsubmitting:")
         for run_dir, script in prepared:
             print("  sbatch %s" % script)
@@ -1001,7 +1064,8 @@ def main(argv=None):
                            cwd=run_dir, check=True)
     else:
         if args.submit:
-            print("not submitting: the template has not been reviewed yet.")
+            print("not submitting: review %s first."
+                  % " and ".join(unreviewed))
         print("re-run with --submit to queue them, or submit manually:")
         for _, script in prepared:
             print("  (cd %s && sbatch run.slurm)" % os.path.dirname(script))

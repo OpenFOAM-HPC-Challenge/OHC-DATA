@@ -62,6 +62,19 @@ invocation writes it from the built-in default and does not submit even with
 the account, partition, time limit and environment your site needs, then run
 the same command again to re-render every `run.slurm` from it.
 
+What a compute node looks like comes from `<workspace>/node-topology.yaml`:
+sockets, NUMA domains, L3 caches, physical cores and hardware threads per
+node, and the machine they were detected on, which every run shows. Tasks per
+node, the `multilevel` decomposition and the `--ranks-per-domain` sweep
+take their defaults from it. The first invocation detects the machine it runs
+on (Linux only; counts it cannot read are marked in the file) and, like a
+fresh template, does not submit. On a workstation that is the right machine;
+on a cluster the login node may not be, so rewrite the file on a compute node:
+
+```sh
+srun -N1 --exclusive ... ./benchmark.py --probe-node --workspace /scratch/$USER/occDrivAer
+```
+
 Both downloads happen once and are reused, so a second invocation against the
 same workspace touches the network not at all. A mesh you already have can be
 copied into the workspace instead: `--polymesh DIR` names its `polyMesh`
@@ -79,9 +92,11 @@ The options worth knowing about:
 | `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to name its single resolution, which the cell count in its `owner` header is checked against. | the Zenodo mesh |
 | `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
 | `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
+| `--probe-node` | Only detects the topology of the machine it runs on and writes it to `<workspace>/node-topology.yaml`, replacing what is there. | off -- `node-topology.yaml` is detected once, on first use |
+| `--ntasks-per-node N` | Sets the ranks per node the node count is derived from. | `cores_per_node` from `node-topology.yaml` |
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
 | `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. | `doubling`, from `--start 1,1,1` |
-| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node. | no placement sweep; `--bind-object numa` |
+| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node, over the domains `node-topology.yaml` describes. | no placement sweep; `--bind-object numa` |
 | `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
 
 `./benchmark.py --help` lists the rest.

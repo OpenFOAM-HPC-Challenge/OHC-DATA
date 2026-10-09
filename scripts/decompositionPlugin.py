@@ -36,10 +36,12 @@ import sys
 
 NAME = "multilevel"
 
-# How many of each tier a single node contains, for the 2x AMD EPYC 9655 nodes
-# this case is tuned on.  Counts are PER NODE, not per parent tier, so any
-# ordering of tiers works out: the subdomain count for a level is simply how
-# many of that tier fit inside one of the tier above it.  Overridable with
+# How many of each tier a single node contains.  Counts are PER NODE, not per
+# parent tier, so any ordering of tiers works out: the subdomain count for a
+# level is simply how many of that tier fit inside one of the tier above it.
+# benchmark.py passes the counts of its node description (node-topology.yaml)
+# instead; these, for the 2x AMD EPYC 9655 nodes this case was tuned on, are
+# only the standalone default.  Either is overridable with
 # --multilevel-topology.
 DEFAULT_TOPOLOGY = {"socket": 2, "numa": 8, "cache": 24}
 
@@ -68,15 +70,19 @@ def add_arguments(group):
                             % ",".join(LEVEL_TIERS))
     group.add_argument("--multilevel-topology", dest="multilevel_topology",
                        metavar="LIST", default=None,
-                       help="per-node counts of each tier as name=N pairs "
-                            "(default: %s)"
+                       help="per-node counts of each tier as name=N pairs, "
+                            "overriding the node description (benchmark.py: "
+                            "node-topology.yaml; standalone: %s)"
                             % ",".join("%s=%d" % kv
                                        for kv in sorted(DEFAULT_TOPOLOGY.items())))
 
 
-def parse_topology(text):
-    """Parse 'socket=2,numa=8,cache=24' into a per-node count mapping."""
-    topo = dict(DEFAULT_TOPOLOGY)
+def parse_topology(text, base=None):
+    """Parse 'socket=2,numa=8,cache=24' into a per-node count mapping.
+
+    Entries override `base` (default: DEFAULT_TOPOLOGY) one by one.
+    """
+    topo = dict(DEFAULT_TOPOLOGY if base is None else base)
     for item in (text or "").split(","):
         item = item.strip()
         if not item:
@@ -88,12 +94,17 @@ def parse_topology(text):
     return topo
 
 
-def spec_from_args(args, ncores, nodes):
-    """Build a decomposition spec from parsed benchmark.py arguments."""
+def spec_from_args(args, ncores, nodes, topology=None):
+    """Build a decomposition spec from parsed benchmark.py arguments.
+
+    `topology` is the node's per-node tier counts, which
+    --multilevel-topology overrides; without it, DEFAULT_TOPOLOGY.
+    """
     return multilevel_spec(
         ncores, nodes,
         tiers=[t.strip() for t in args.multilevel_levels.split(",") if t.strip()],
-        topology=parse_topology(getattr(args, "multilevel_topology", None)),
+        topology=parse_topology(getattr(args, "multilevel_topology", None),
+                                topology),
         method=args.multilevel_method)
 
 
