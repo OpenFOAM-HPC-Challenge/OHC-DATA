@@ -320,13 +320,21 @@ def extract(tarball, destdir, locate=find_polymesh, what="polyMesh"):
 
 
 def prepare_mesh(mesh, meshes_dir):
-    """Download and extract one mesh, returning the shared polyMesh path."""
+    """Download and extract one mesh, returning the shared polyMesh path.
+
+    A mesh already extracted into the workspace is reused, whether or not its
+    tarball is still there; only a missing one is downloaded.
+    """
     tarname, label = MESHES[mesh]
     print("[mesh] %s (%s cells)" % (mesh, label))
     tarball = os.path.join(meshes_dir, tarname)
     extract_dir = os.path.join(meshes_dir, mesh)
     os.makedirs(extract_dir, exist_ok=True)
 
+    existing = find_polymesh(extract_dir)
+    if existing:
+        print("  = already extracted: %s" % existing)
+        return existing
     download(ZENODO_URL.format(tarname), tarball)
     return extract(tarball, extract_dir)
 
