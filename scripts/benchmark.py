@@ -16,8 +16,10 @@ Challenge occDrivAer case.  It
   3. prepares the hierarchical decomposition for each nCores using the
      ``decompositionIter`` doubling strategy and writes it into that copy's
      ``system/include/caseDefinition``,
-  4. renders a SLURM batch script from ``--slurm-template`` (or a built-in
-     default) that supplies the sbatch directives and calls ``Allrun``,
+  4. renders a SLURM batch script from ``--slurm-template``, or else from
+     ``<workspace>/slurm.template`` -- written from a built-in default on
+     first use, for you to adapt -- that supplies the sbatch directives and
+     calls ``Allrun``,
   5. optionally submits every generated script with ``sbatch`` (``--submit``).
 
 Harvesting the finished runs back into a submission file is the job of the
@@ -93,9 +95,11 @@ IGNORE_NAMES = {
     "benchmark.py", "slurm.template",
 }
 
-# Built-in SLURM template used when --slurm-template is not given.  Placeholders
-# use string.Template syntax ($name); bash ${VAR} / $VAR expansions are left
-# untouched because their names are not in the substitution mapping.
+# Built-in SLURM template, written to <workspace>/slurm.template on first use
+# when --slurm-template is not given.  Placeholders use string.Template syntax
+# ($name); bash ${VAR} / $VAR expansions are left untouched because their names
+# are not in the substitution mapping.
+SLURM_TEMPLATE_NAME = "slurm.template"
 DEFAULT_SLURM_TEMPLATE = """\
 #!/bin/bash -l
 #SBATCH --job-name=$jobname
@@ -480,6 +484,20 @@ def set_end_time(run_dir, end_time):
     return patched
 
 
+def workspace_template(workspace):
+    """The workspace's SLURM template as (path, fresh).
+
+    Written from the built-in default the first time (fresh is then True) and
+    reused afterwards, so editing it and re-running re-renders every run.slurm.
+    """
+    path = os.path.join(workspace, SLURM_TEMPLATE_NAME)
+    if os.path.exists(path):
+        return path, False
+    with open(path, "w") as f:
+        f.write(DEFAULT_SLURM_TEMPLATE)
+    return path, True
+
+
 def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
                  ompiflags="", extra_sbatch="", label=None):
     """Render the SLURM script for one run and write it as run.slurm.
@@ -569,7 +587,9 @@ def build_parser():
     p.add_argument("--slurm-template", metavar="FILE",
                    help="SLURM template file providing sbatch directives; "
                         "$ncores $nhierarchical $mesh $jobname $tpn $nodes "
-                        "$casedir are substituted (default: built-in template)")
+                        "$casedir are substituted (default: "
+                        "<workspace>/slurm.template, written from the "
+                        "built-in template on first use)")
     decomp_choices = ["doubling", "optimal"]
     if decompositionPlugin:
         decomp_choices.append(decompositionPlugin.NAME)
@@ -783,19 +803,23 @@ def main(argv=None):
     if args.submit and not shutil.which("sbatch"):
         sys.exit("error: --submit given but 'sbatch' not found in PATH")
 
-    if args.slurm_template:
-        with open(args.slurm_template) as f:
-            template_text = f.read()
-    else:
-        template_text = DEFAULT_SLURM_TEMPLATE
-
     workspace = os.path.abspath(args.workspace)
     meshes_dir = os.path.join(workspace, "meshes")
     runs_dir = os.path.join(workspace, "runs")
     os.makedirs(meshes_dir, exist_ok=True)
     os.makedirs(runs_dir, exist_ok=True)
 
+    if args.slurm_template:
+        template_path, fresh_template = args.slurm_template, False
+    else:
+        template_path, fresh_template = workspace_template(workspace)
+    with open(template_path) as f:
+        template_text = f.read()
+
     print("workspace: %s" % workspace)
+    print("template:  %s%s" % (display_path(template_path, workspace),
+                               " (written from the built-in default)"
+                               if fresh_template else ""))
     print("meshes:    %s" % ", ".join(args.mesh))
     print("nCores:    %s" % ", ".join(str(n) for n in ncores_list))
     if args.end_time:
@@ -874,13 +898,19 @@ def main(argv=None):
 
     print("prepared %d run(s)." % len(prepared))
 
-    if args.submit:
+    if fresh_template:
+        print("\nthe sbatch directives come from %s, just written from the "
+              "built-in default -- adapt them to your site and re-run to "
+              "re-render run.slurm." % template_path)
+    if args.submit and not fresh_template:
         print("\nsubmitting:")
         for run_dir, script in prepared:
             print("  sbatch %s" % script)
             subprocess.run(["sbatch", os.path.basename(script)],
                            cwd=run_dir, check=True)
     else:
+        if args.submit:
+            print("not submitting: the template has not been reviewed yet.")
         print("re-run with --submit to queue them, or submit manually:")
         for _, script in prepared:
             print("  (cd %s && sbatch run.slurm)" % os.path.dirname(script))

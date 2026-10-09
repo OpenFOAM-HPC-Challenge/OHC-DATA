@@ -56,6 +56,12 @@ decomposition into each copy's `system/include/caseDefinition`, and renders a
 SLURM script beside it. Add `--submit` to queue them straight away, or submit
 the generated `run.slurm` files yourself.
 
+The sbatch directives come from `<workspace>/slurm.template`. The first
+invocation writes it from the built-in default and does not submit even with
+`--submit`, because that default is a starting point, not a portable one: set
+the account, partition, time limit and environment your site needs, then run
+the same command again to re-render every `run.slurm` from it.
+
 Both downloads happen once and are reused, so a second invocation against the
 same workspace touches the network not at all. If you drop the scripts into a
 case checkout of your own, that case is used instead of the upstream one --
@@ -69,7 +75,7 @@ The options worth knowing about:
 | `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
 | `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
 | `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
-| `--slurm-template FILE` | Supplies your site's sbatch directives. The built-in default is a starting point, not a portable one. | the built-in template |
+| `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
 | `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. | `doubling`, from `--start 1,1,1` |
 | `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node. | no placement sweep; `--bind-object numa` |
