@@ -112,6 +112,54 @@ def parse_meshes(value):
     return out
 
 
+# The --decomposition names: OpenFOAM's method first, then what varies within
+# it.  Every one but the default lives in run directories suffixed with its
+# name (512-scotch), so decompositions sit side by side in one workspace and
+# postprocess.py can tell their sweeps apart.
+DECOMPOSITIONS = ("hierarchical-doubling", "hierarchical-optimal", "scotch",
+                  "multilevel-scotch", "multilevel-metis", "multilevel-kahip")
+DEFAULT_DECOMPOSITION = DECOMPOSITIONS[0]
+
+
+def run_dirname(name, decomposition):
+    """A run directory's name: `name` (the nCores or nodes it is keyed on),
+    suffixed with the decomposition unless that is the default."""
+    if decomposition == DEFAULT_DECOMPOSITION:
+        return str(name)
+    return "%s-%s" % (name, decomposition)
+
+
+def parse_run_dirname(dirname, decomposition):
+    """The number a run directory of `decomposition` is keyed on, or None
+    when `dirname` is not one of that decomposition's run directories."""
+    m = re.match(r"(\d+)(?:-(.+))?$", dirname)
+    if not m or (m.group(2) or DEFAULT_DECOMPOSITION) != decomposition:
+        return None
+    return int(m.group(1))
+
+
+def check_method_available(method="scotch"):
+    """(ok, message) for whether `method` is really linked into OpenFOAM.
+
+    OpenFOAM ships dummy stubs that link but abort at run time, so the
+    presence of a library name is not enough -- it must not be the dummy.
+    """
+    libbin = os.environ.get("FOAM_LIBBIN")
+    if not libbin:
+        return None, "FOAM_LIBBIN unset; source the OpenFOAM bashrc to check"
+    if method in ("hierarchical", "simple", "none"):
+        return True, "%s is built in" % method
+    real = os.path.join(libbin, "lib%sDecomp.so" % method)
+    dummy = os.path.join(libbin, "dummy", "lib%sDecomp.so" % method)
+    if os.path.exists(real):
+        return True, "%s available (%s)" % (method, real)
+    if os.path.exists(dummy):
+        return False, ("only the dummy stub for %s is present (%s); it links "
+                       "but aborts at run time -- build ThirdParty %s first"
+                       % (method, dummy, method))
+    return False, "no %sDecomp library found under %s" % (method, libbin)
+
+
 def add_shared_arguments(p):
     """Add the options both drivers take: which meshes, and where they live."""
     p.add_argument("--mesh", type=parse_meshes, default=list(MESHES),

@@ -65,7 +65,7 @@ the same command again to re-render every `run.slurm` from it.
 What a compute node looks like comes from `<workspace>/node-topology.yaml`:
 sockets, NUMA domains, L3 caches, physical cores and hardware threads per
 node, and the machine they were detected on, which every run shows. Tasks per
-node, the `multilevel` decomposition and the `--ranks-per-domain` sweep
+node, the `multilevel-*` decompositions and the `--ranks-per-domain` sweep
 take their defaults from it. The first invocation detects the machine it runs
 on (Linux only; counts it cannot read are marked in the file) and, like a
 fresh template, does not submit. On a workstation that is the right machine;
@@ -95,7 +95,7 @@ The options worth knowing about:
 | `--probe-node` | Only detects the topology of the machine it runs on and writes it to `<workspace>/node-topology.yaml`, replacing what is there. | off -- `node-topology.yaml` is detected once, on first use |
 | `--ntasks-per-node N` | Sets the ranks per node the node count is derived from. | `cores_per_node` from `node-topology.yaml` |
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
-| `--decomposition optimal` | Picks the triplet minimising interface area against the `blockMeshDict` bounding box, instead of the case's cyclic doubling. | `doubling`, from `--start 1,1,1` |
+| `--decomposition NAME` | Picks the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet minimising interface area against the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. | `hierarchical-doubling`, from `--start 1,1,1` |
 | `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node, over the domains `node-topology.yaml` describes. | no placement sweep; `--bind-object numa` |
 | `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
 
@@ -121,6 +121,12 @@ It then prints a scaling table per mesh and writes one submission per mesh to
 ID and the cell count -- `07_OHC1_DrivAer_65M.json`. Runs that never reached
 the requested iteration count are harvested as well and marked partial, so a
 sweep can be inspected while the queue is still working through it.
+
+One sweep is one decomposition. The default harvests the
+`hierarchical-doubling` runs; `--decomposition scotch` (or any other name
+`benchmark.py` took) harvests that decomposition's run directories instead and
+writes them to a folder of its own, so the submissions do not overwrite each
+other.
 
 `--format yaml` (the default) writes the fuller document, including the force
 coefficient history, and `--format both` writes the two. The JSON is the one

@@ -14,11 +14,11 @@ Challenge occDrivAer case.  It
   2. builds one self-contained case copy per (mesh, nCores) combination under
      ``<workspace>/runs/<mesh>/<nCores>/``, with the polyMesh symlinked to a
      shared, downloaded-once copy,
-  3. prepares the hierarchical decomposition for each nCores using the
-     ``decompositionIter`` doubling strategy and writes it into that copy's
-     ``system/include/caseDefinition``,
+  3. writes the decomposition for each nCores into that copy's
+     ``system/include/caseDefinition`` -- by default ``hierarchical`` with
+     the ``decompositionIter`` doubling strategy (``--decomposition``),
   4. derives tasks per node and the topology defaults of the multilevel
-     decomposition and the placement sweep from
+     decompositions and the placement sweep from
      ``<workspace>/node-topology.yaml``, a description of the compute node
      detected on first use (``--probe-node`` rewrites it on a compute node),
   5. renders a SLURM batch script from ``--slurm-template``, or else from
@@ -61,9 +61,10 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
-                    CASE_WEB_URL, MESH_CELLS, MESHES, ZENODO_URL,
-                    add_shared_arguments, display_path, is_case,
-                    parse_posint_list, parse_start)
+                    CASE_WEB_URL, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
+                    MESH_CELLS, MESHES, ZENODO_URL, add_shared_arguments,
+                    check_method_available, run_dirname,
+                    display_path, is_case, parse_posint_list, parse_start)
 import topology
 
 # Optional: decomposition methods that need more than a coefficient triplet
@@ -236,7 +237,7 @@ def optimal_triplet(ncores, extents):
     return list(best)
 
 
-def hierarchical_for(ncores, start):
+def hierarchical_for(ncores, start, quiet=False):
     """Return the hierarchical triplet [nx, ny, nz] whose product is `ncores`.
 
     Uses the decompositionIter doubling strategy first (the intended path for
@@ -253,8 +254,9 @@ def hierarchical_for(ncores, start):
             break
 
     triplet = balanced_triplet(ncores)
-    print("  ! %d not reachable by doubling from %s; using balanced %s"
-          % (ncores, start, tuple(triplet)))
+    if not quiet:
+        print("  ! %d not reachable by doubling from %s; using balanced %s"
+              % (ncores, start, tuple(triplet)))
     return triplet
 
 
@@ -512,6 +514,20 @@ def set_decomposition(run_dir, ncores, triplet):
         f.write(text)
 
 
+def set_method(run_dir, method):
+    """Rewrite decompositionMethod in the run's caseDefinition."""
+    path = os.path.join(run_dir, CASE_DEFINITION)
+    with open(path) as f:
+        text = f.read()
+    text, n = re.subn(r"(?m)^(\s*decompositionMethod\s+)\S+;",
+                      r"\g<1>%s;" % method, text)
+    if n != 1:
+        raise RuntimeError("could not set decompositionMethod in %s "
+                           "(%d matches)" % (path, n))
+    with open(path, "w") as f:
+        f.write(text)
+
+
 def numa_placement(ranks_per_domain, cores_per_domain, bind_object="numa"):
     """OpenMPI flags pinning `ranks_per_domain` ranks into every domain.
 
@@ -671,24 +687,31 @@ def build_parser():
                         "$casedir are substituted (default: "
                         "<workspace>/slurm.template, written from the "
                         "built-in template on first use)")
-    decomp_choices = ["doubling", "optimal"]
-    if decompositionPlugin:
-        decomp_choices.append(decompositionPlugin.NAME)
-    p.add_argument("--decomposition", choices=tuple(decomp_choices),
-                   default="doubling", dest="decomposition",
-                   help="how to pick nHierarchical: 'doubling' follows the "
-                        "--start triplet cyclically (the case's own "
-                        "convention); 'optimal' minimises the interface area "
-                        "against the blockMeshDict bounding box, which matters "
-                        "on this elongated domain%s (default: doubling)"
-                        % ("; '%s' delegates to decompositionPlugin.py"
-                           % decompositionPlugin.NAME if decompositionPlugin
-                           else ""))
+    p.add_argument("--decomposition", dest="decomposition",
+                   choices=tuple(d for d in DECOMPOSITIONS
+                                 if decompositionPlugin
+                                 or not d.startswith("multilevel")),
+                   default=DEFAULT_DECOMPOSITION,
+                   help="OpenFOAM method and how it is set up: "
+                        "'hierarchical-doubling' follows the --start triplet "
+                        "cyclically (the case's own convention); "
+                        "'hierarchical-optimal' minimises the interface area "
+                        "against the blockMeshDict bounding box, which "
+                        "matters on this elongated domain; 'scotch' needs no "
+                        "set-up%s. All but the default get their own run "
+                        "directories, e.g. runs/<mesh>/512-scotch "
+                        "(default: %s)"
+                        % ("; 'multilevel-scotch', 'multilevel-metis' and "
+                           "'multilevel-kahip' split by hardware tier with "
+                           "that method in every level, see "
+                           "decompositionPlugin.py"
+                           if decompositionPlugin else "",
+                           DEFAULT_DECOMPOSITION))
     p.add_argument("--domain-aspect", type=parse_start, dest="domain_aspect",
                    metavar="X,Y,Z",
                    help="override the domain side lengths used by "
-                        "--decomposition optimal (default: read from "
-                        "system/blockMeshDict)")
+                        "--decomposition hierarchical-optimal (default: "
+                        "read from system/blockMeshDict)")
     p.add_argument("--start", type=parse_start, default=[1, 1, 1],
                    metavar="X,Y,Z",
                    help="start triplet for the decompositionIter doubling "
@@ -936,6 +959,14 @@ def main(argv=None):
                  "ompiflags": "", "extra_sbatch": ""}
                 for n in ncores_list]
 
+    # Every decomposition but the default gets its own run directories and
+    # job names, so several can be prepared side by side in one workspace.
+    for spec in runs:
+        spec["dirname"] = run_dirname(spec["dirname"], args.decomposition)
+        if args.decomposition != DEFAULT_DECOMPOSITION:
+            spec["label"] = "%s_%s" % (spec["label"] or spec["ncores"],
+                                       args.decomposition)
+
     if args.submit and not shutil.which("sbatch"):
         sys.exit("error: --submit given but 'sbatch' not found in PATH")
 
@@ -982,22 +1013,24 @@ def main(argv=None):
     print()
 
     use_plugin = (decompositionPlugin
-                  and args.decomposition == decompositionPlugin.NAME)
-    if use_plugin:
-        ok, msg = decompositionPlugin.check_method_available(
-            args.multilevel_method)
+                  and args.decomposition in decompositionPlugin.NAMES)
+    hierarchical = args.decomposition.startswith("hierarchical")
+    if not hierarchical:
+        ok, msg = check_method_available(
+            decompositionPlugin.METHODS[args.decomposition] if use_plugin
+            else args.decomposition)
         print("decomp:    %s" % msg)
         if ok is False:
             sys.exit("error: %s" % msg)
         print()
 
     extents = None
-    if args.decomposition == "optimal":
+    if args.decomposition == "hierarchical-optimal":
         extents = args.domain_aspect or domain_extents(case_dir)
         if extents is None:
-            sys.exit("error: --decomposition optimal needs the domain size; "
-                     "could not read system/blockMeshDict -- pass "
-                     "--domain-aspect X,Y,Z")
+            sys.exit("error: --decomposition hierarchical-optimal needs the "
+                     "domain size; could not read system/blockMeshDict -- "
+                     "pass --domain-aspect X,Y,Z")
         print("domain:    %g x %g x %g (interface-minimising decomposition)"
               % tuple(extents))
         print()
@@ -1012,16 +1045,16 @@ def main(argv=None):
             if use_plugin:
                 plugin_spec = decompositionPlugin.spec_from_args(
                     args, ncores, spec["nodes"], node_tiers(node))
-                # multiLevel replaces nHierarchical entirely; the triplet is
-                # still written so the dictionary stays valid if the method is
-                # switched back by hand.
-                triplet = hierarchical_for(ncores, args.start)
-            else:
-                triplet = (optimal_triplet(ncores, extents) if extents
-                           else hierarchical_for(ncores, args.start))
+            # scotch and multiLevel do not use nHierarchical; the triplet is
+            # still written so the dictionary stays valid if the method is
+            # switched back by hand.
+            triplet = (optimal_triplet(ncores, extents) if extents
+                       else hierarchical_for(ncores, args.start,
+                                             quiet=not hierarchical))
             run_dir = os.path.join(runs_dir, mesh, spec["dirname"])
-            print("[run]  %s / %d cores on %d node(s) -> hierarchical %s"
-                  % (mesh, ncores, spec["nodes"], tuple(triplet)))
+            print("[run]  %s / %d cores on %d node(s) -> %s%s"
+                  % (mesh, ncores, spec["nodes"], args.decomposition,
+                     " %s" % (tuple(triplet),) if hierarchical else ""))
             if plugin_spec:
                 print("       %s" % decompositionPlugin.describe(plugin_spec))
             if spec["ompiflags"]:
@@ -1030,6 +1063,8 @@ def main(argv=None):
             copy_case(case_dir, run_dir)
             link_polymesh(run_dir, polymesh)
             set_decomposition(run_dir, ncores, triplet)
+            if args.decomposition == "scotch":
+                set_method(run_dir, "scotch")
             if plugin_spec:
                 decompositionPlugin.apply(run_dir, plugin_spec)
             if args.end_time:

@@ -67,8 +67,9 @@ import socket
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_DEFINITION, MESH_CELLS, MESHES, add_shared_arguments,
-                    display_path, read_text, sanitize)
+from common import (CASE_DEFINITION, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
+                    MESH_CELLS, MESHES, add_shared_arguments, display_path,
+                    parse_run_dirname, read_text, sanitize)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -946,7 +947,11 @@ def postprocess(args, workspace):
     # results, not a second draft of the same one.  --run gives each its own
     # folder below the machine, with its own meta.yaml, so nothing overwrites
     # anything and each configuration is described where its numbers are.
-    run_name = sanitize(args.run) if args.run else ""
+    # A decomposition other than the default is such a configuration too, so
+    # it gets a run folder of its own unless --run names one.
+    run_name = sanitize(args.run) if args.run else (
+        "" if args.decomposition == DEFAULT_DECOMPOSITION
+        else args.decomposition)
     if run_name:
         outdir = os.path.join(outdir, run_name)
 
@@ -961,11 +966,13 @@ def postprocess(args, workspace):
         if not os.path.isdir(mesh_dir):
             continue
 
-        # Numeric sort so the simulation list is a proper scaling sweep.
+        # Only the --decomposition's run directories, sorted by number so the
+        # simulation list is a proper scaling sweep.
         ncores_dirs = sorted(
             (d for d in os.listdir(mesh_dir)
-             if d.isdigit() and os.path.isdir(os.path.join(mesh_dir, d))),
-            key=int)
+             if parse_run_dirname(d, args.decomposition) is not None
+             and os.path.isdir(os.path.join(mesh_dir, d))),
+            key=lambda d: parse_run_dirname(d, args.decomposition))
 
         runs = []
         for entry in ncores_dirs:
@@ -1290,6 +1297,13 @@ def build_parser():
                         "LMOD_SYSTEM_NAME, OHC_MACHINE) falling back to the "
                         "short hostname. Pass '-' to put the files straight "
                         "in the dated directory")
+    p.add_argument("--decomposition", choices=DECOMPOSITIONS,
+                   default=DEFAULT_DECOMPOSITION,
+                   help="which of benchmark.py's decompositions to harvest: "
+                        "its run directories (512, or 512-scotch for any but "
+                        "the default) make one sweep. A non-default one is "
+                        "written to a run folder of its name unless --run "
+                        "gives another (default: %s)" % DEFAULT_DECOMPOSITION)
     p.add_argument("--run", metavar="NAME",
                    help="run folder written inside the machine directory, for "
                         "harvesting the same machine more than once -- a "
@@ -1332,6 +1346,7 @@ def main(argv=None):
 
     workspace = os.path.abspath(args.workspace)
     print("workspace: %s" % workspace)
+    print("decomp:    %s" % args.decomposition)
     print("meshes:    %s\n" % ", ".join(args.mesh))
     return postprocess(args, workspace)
 
