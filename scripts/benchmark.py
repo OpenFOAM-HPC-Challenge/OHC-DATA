@@ -13,7 +13,8 @@ Challenge occDrivAer case.  It
      copies in the existing mesh ``--polymesh`` names instead,
   2. builds one self-contained case copy per (mesh, nCores) combination under
      ``<workspace>/runs/<mesh>/<nCores>/``, with the polyMesh symlinked to a
-     shared, downloaded-once copy,
+     shared, downloaded-once copy and an ``Allrun`` whose MPI launcher and
+     flags ``run.slurm`` can set (``MPI_LAUNCHER``, ``OMPI_FLAGS``),
   3. writes the decomposition for each nCores into that copy's
      ``system/include/caseDefinition`` -- by default ``hierarchical`` with
      the ``decompositionIter`` doubling strategy (``--decomposition``),
@@ -131,6 +132,7 @@ DEFAULT_SLURM_TEMPLATE = """\
 $extrasbatch
 
 export OMPI_FLAGS="$ompiflags"
+export MPI_LAUNCHER="$launcher"
 
 cd $casedir
 ./Allrun
@@ -461,6 +463,26 @@ def _ignore(dirpath, names):
     return ignored
 
 
+def allrun_with_launcher(text):
+    """`text` of an Allrun whose MPI launcher and flags the environment sets.
+
+    The stock Allrun hard-codes ``mpirun -np`` and resets OMPI_FLAGS, so
+    neither a site without mpirun nor the placement flags run.slurm exports
+    get through.  Both become overridable, MPI_LAUNCHER and OMPI_FLAGS, with
+    the stock values as defaults.  Returns `text` itself when it is patched
+    already, and None when it lacks the stock lines.
+    """
+    if "MPI_LAUNCHER" in text:
+        return text
+    text, n1 = re.subn(r'(?m)^OMPI_FLAGS=""', 'OMPI_FLAGS="${OMPI_FLAGS:-}"',
+                       text)
+    text, n2 = re.subn(
+        r'(?m)^parEx="mpirun -np \$\{nProcs\} \$\{OMPI_FLAGS\}"$',
+        'MPI_LAUNCHER="${MPI_LAUNCHER:-mpirun -np}"  # run.slurm may set it\n'
+        'parEx="${MPI_LAUNCHER} ${nProcs} ${OMPI_FLAGS}"', text)
+    return text if n1 == 1 and n2 == 1 else None
+
+
 def copy_case(src, dst):
     """Copy the pristine case into `dst` (excluding mesh / generated files)."""
     for dirpath, dirnames, filenames in os.walk(src):
@@ -593,6 +615,8 @@ def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
 
     `label` disambiguates the job name when nCores alone does not -- a
     fixed-total-ranks sweep runs the same core count on several node counts.
+    The launcher is srun, except for runs with placement flags: those are
+    Open MPI options, which only mpirun accepts.
     """
     nodes = (ncores + tpn - 1) // tpn  # ceil division
     mapping = {
@@ -605,6 +629,7 @@ def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
         "nodes": nodes,
         "casedir": os.path.abspath(run_dir),
         "ompiflags": ompiflags,
+        "launcher": "mpirun -np" if ompiflags else "srun -n",
         "extrasbatch": extra_sbatch,
     }
     text = string.Template(template_text).safe_substitute(mapping)
@@ -1010,6 +1035,14 @@ def main(argv=None):
 
     case_dir = resolve_case(args, workspace)
     print("case:      %s" % display_path(case_dir, workspace))
+    allrun = None
+    if os.path.isfile(os.path.join(case_dir, "Allrun")):
+        with open(os.path.join(case_dir, "Allrun")) as f:
+            allrun = allrun_with_launcher(f.read())
+    if allrun is None:
+        print("warning: the case's Allrun has no stock mpirun/OMPI_FLAGS "
+              "lines; MPI_LAUNCHER and OMPI_FLAGS from run.slurm will not "
+              "reach it", file=sys.stderr)
     print()
 
     use_plugin = (decompositionPlugin
@@ -1061,6 +1094,9 @@ def main(argv=None):
                 print("       placement %s" % spec["ompiflags"])
 
             copy_case(case_dir, run_dir)
+            if allrun is not None:
+                with open(os.path.join(run_dir, "Allrun"), "w") as f:
+                    f.write(allrun)
             link_polymesh(run_dir, polymesh)
             set_decomposition(run_dir, ncores, triplet)
             if args.decomposition == "scotch":
