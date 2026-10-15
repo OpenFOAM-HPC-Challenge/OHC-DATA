@@ -127,6 +127,7 @@ DEFAULT_SLURM_TEMPLATE = """\
 #SBATCH --ntasks-per-node=$tpn
 #SBATCH --nodes=$nodes
 #SBATCH --partition=arm
+#SBATCH --time=24:00:00
 #SBATCH --output=%x-%j.out
 #SBATCH --error=%x-%j.err
 $extrasbatch
