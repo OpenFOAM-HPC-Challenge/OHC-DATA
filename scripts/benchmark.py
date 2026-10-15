@@ -53,6 +53,7 @@ import gzip
 import itertools
 import os
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -120,6 +121,7 @@ IGNORE_NAMES = {
 # ($name); bash ${VAR} / $VAR expansions are left untouched because their names
 # are not in the substitution mapping.
 SLURM_TEMPLATE_NAME = "slurm.template"
+PROBE_SCRIPT_NAME = "probe.slurm"
 DEFAULT_SLURM_TEMPLATE = """\
 #!/bin/bash -l
 #SBATCH --job-name=$jobname
@@ -610,6 +612,40 @@ def workspace_template(workspace):
     return path, True
 
 
+def write_probe_script(template_text, workspace):
+    """Render the SLURM template into <workspace>/probe.slurm, a job that runs
+    --probe-node on a compute node in place of Allrun.
+
+    It keeps the site settings of the template -- account, partition,
+    environment -- and appends the probe's own directives after its last
+    #SBATCH line, where they override the template's.  Returns the path, or
+    None when the template has no ./Allrun line to replace.
+    """
+    text = string.Template(template_text).safe_substitute({
+        "jobname": "probe-node", "ncores": 1, "tpn": 1, "nodes": 1,
+        "casedir": workspace, "ompiflags": "", "launcher": "srun -n",
+        "extrasbatch": "", "mesh": "", "nhierarchical": "",
+    })
+    probe = " ".join(shlex.quote(arg) for arg in (
+        sys.executable, os.path.abspath(__file__), "--probe-node",
+        "--workspace", workspace))
+    text, n = re.subn(r"(?m)^(\s*)\./Allrun\b.*$",
+                      lambda m: m.group(1) + probe, text)
+    if n == 0:
+        return None
+    lines = text.split("\n")
+    last = max([i for i, line in enumerate(lines)
+                if line.startswith("#SBATCH")] or [0])
+    lines[last + 1:last + 1] = ["#SBATCH --nodes=1", "#SBATCH --ntasks=1",
+                                "#SBATCH --exclusive",
+                                "#SBATCH --time=00:10:00"]
+    path = os.path.join(workspace, PROBE_SCRIPT_NAME)
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+    os.chmod(path, 0o755)
+    return path
+
+
 def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
                  ompiflags="", extra_sbatch="", label=None):
     """Render the SLURM script for one run and write it as run.slurm.
@@ -750,9 +786,10 @@ def build_parser():
                         "cores_per_node of the node description)")
     p.add_argument("--probe-node", action="store_true", dest="probe_node",
                    help="only detect this machine's topology and write it to "
-                        "<workspace>/%s, replacing what is there; run it "
-                        "on a compute node, e.g. in an srun"
-                        % topology.NODE_FILE)
+                        "<workspace>/%s, replacing what is there, and write "
+                        "<workspace>/%s, a job that does the same on a "
+                        "compute node" % (topology.NODE_FILE,
+                                          PROBE_SCRIPT_NAME))
     p.add_argument("--end-time", type=int, dest="end_time", metavar="N",
                    help="override endTime (iteration count) in the run copies. "
                         "Useful for short placement/tuning runs; the challenge "
@@ -860,6 +897,27 @@ def main(argv=None):
               % (node_path, topology.describe(node), node[topology.HOST_KEY]))
         if undetected:
             print("not detected, fill in: %s" % ", ".join(undetected))
+        if os.environ.get("SLURM_JOB_ID"):
+            return          # already on a compute node
+        if args.slurm_template:
+            template_path, fresh_template = args.slurm_template, False
+        else:
+            template_path, fresh_template = workspace_template(workspace)
+        with open(template_path) as f:
+            script = write_probe_script(f.read(), workspace)
+        if script is None:
+            print("\nthat is %s, the machine this ran on. To describe the "
+                  "compute nodes instead, run --probe-node on one, e.g. in an "
+                  "srun: %s has no ./Allrun line to turn into a probe job."
+                  % (node[topology.HOST_KEY], template_path))
+            return
+        print("\nthat is %s, the machine this ran on. To describe the "
+              "compute nodes instead, submit the probe job written from %s%s:"
+              % (node[topology.HOST_KEY], template_path,
+                 " -- just written from the built-in default, so adapt it to "
+                 "your site and re-run --probe-node first"
+                 if fresh_template else ""))
+        print("  (cd %s && sbatch %s)" % (workspace, PROBE_SCRIPT_NAME))
         return
     fresh_node = not os.path.exists(node_path)
     if fresh_node:
@@ -1122,8 +1180,8 @@ def main(argv=None):
               "re-render run.slurm." % template_path)
     if fresh_node:
         print("\nthe node description %s was just detected on %s -- check "
-              "that it describes the compute nodes (or rewrite it on one with "
-              "--probe-node) and re-run."
+              "that it describes the compute nodes (--probe-node writes a job "
+              "that rewrites it on one) and re-run."
               % (node_path, node[topology.HOST_KEY]))
     unreviewed = [name for name, fresh in (("the template", fresh_template),
                                            ("the node description",

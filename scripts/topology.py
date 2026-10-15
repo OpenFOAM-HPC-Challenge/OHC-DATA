@@ -290,9 +290,8 @@ def write(path, node, undetected):
         "# %s is the machine the counts were detected on.  On a cluster,"
         % HOST_KEY,
         "# make sure they describe a compute node, not the login node --",
-        "# e.g. rewrite the file on one with",
-        "#   srun -N1 --exclusive ... benchmark.py --probe-node "
-        "--workspace <this workspace>",
+        "# benchmark.py --probe-node writes probe.slurm, a job that rewrites",
+        "# the file on one.",
     ]
     if node.get(HOST_KEY):
         lines.append("%s: %s" % (HOST_KEY, node[HOST_KEY]))
