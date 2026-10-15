@@ -70,6 +70,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (CASE_DEFINITION, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
                     MESH_CELLS, MESHES, add_shared_arguments, display_path,
                     parse_run_dirname, read_text, sanitize)
+import topology
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -733,11 +734,221 @@ def yaml_load_flat(path):
         meta[key.strip()] = value
     return meta
 
-def write_metadata_template(path):
+# --------------------------------------------------------------------------- #
+# Hardware metadata the machine can tell
+# --------------------------------------------------------------------------- #
+
+def clean_cpu_name(name):
+    """'Intel(R) Xeon(R) Platinum 8368 CPU @ 2.40GHz' -> 'Intel Xeon Platinum
+    8368', 'AMD EPYC 7763 64-Core Processor' -> 'AMD EPYC 7763 64-Core'."""
+    name = re.sub(r"\((?:R|TM)\)", "", name, flags=re.I)
+    name = re.sub(r"\s+(?:CPU\s+)?@\s*[\d.]+\s*GHz\s*$", "", name)
+    name = re.sub(r"\s+(?:Processor|CPU)\s*$", "", name)
+    return " ".join(name.split())
+
+
+def split_cpu(name):
+    """(family, model, submodel) of a cleaned CPU name, or None."""
+    m = re.match(r"AMD EPYC (\w{4})", name)
+    if m:
+        return "AMD", "EPYC", m.group(1)
+    m = re.match(r"Intel Xeon (?:(?:Platinum|Gold|Silver|Bronze|Max) )?"
+                 r"[A-Za-z-]*?(\d{4})", name)
+    if m:
+        return "Intel", "Xeon", m.group(1)
+    return None
+
+
+def dataset_records():
+    """data/data.json of this checkout, or [] outside one."""
+    try:
+        with open(os.path.join(REPO, "data", "data.json")) as f:
+            records = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return records if isinstance(records, list) else records.get("records", [])
+
+
+def most_common(values):
+    values = [v for v in values if v not in (None, "", "N/A", "-", "Unknown")]
+    return max(set(values), key=values.count) if values else None
+
+
+def same_cpu(record, family, submodel):
+    return (record.get("CPU Family") == family
+            and str(record.get("CPU Submodel")).lower() == submodel.lower())
+
+
+def generation_digit(family, submodel):
+    """The digit of the model number that tells the generation: the last for
+    AMD EPYC, the second for Intel Xeon Scalable; None for anything else."""
+    if family == "AMD":
+        return submodel[-1:]
+    if family == "Intel" and len(submodel) == 4:
+        return submodel[1:2]
+    return None
+
+
+def cpu_generation(family, model, submodel, records):
+    """The generation of a CPU as data/data.json has it, and a note on where
+    it was found, or (None, None).
+
+    A CPU the dataset has no record of gets the generation of the CPUs that
+    share its generation digit.
+    """
+    known = most_common(r.get("CPU Generation") for r in records
+                        if same_cpu(r, family, submodel))
+    if known:
+        return known, "as data/data.json has it for this CPU"
+    digit = generation_digit(family, submodel)
+    if digit is None:
+        return None, None
+    alike = [r for r in records
+             if (r.get("CPU Family"), r.get("CPU Model")) == (family, model)
+             and generation_digit(family, str(r.get("CPU Submodel")).lower())
+             == digit]
+    gen = most_common(r.get("CPU Generation") for r in alike)
+    if gen is None:
+        return None, None
+    names = sorted({str(r.get("CPU Submodel")) for r in alike
+                    if r.get("CPU Generation") == gen})
+    return gen, ("as data/data.json has it for %s %s, the same generation "
+                 "digit" % (model, ", ".join(names)))
+
+
+def memory_size(gib):
+    """The installed memory in GB that a MemTotal of `gib` GiB stands for.
+
+    MemTotal sits a few per cent below the installed size, so it is rounded up
+    to the next 2^k or 1.5 * 2^k: the sizes a power-of-two number of DIMMs
+    per channel gives on 8-, 6-, 12- and 24-channel boards alike.
+    """
+    size = 1
+    while size < gib:
+        size *= 2
+    if size >= 4 and size * 3 // 4 >= gib:
+        size = size * 3 // 4
+    return size
+
+
+def file_system(path):
+    """The file system `path` lives on, from /proc/mounts, or None."""
+    path = os.path.realpath(path)
+    best = None
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                fields = line.split()
+                if len(fields) < 3:
+                    continue
+                mount = fields[1].replace("\\040", " ")
+                if (path == mount or path.startswith(mount.rstrip("/") + "/")) \
+                        and (best is None or len(mount) > len(best[0])):
+                    best = (mount, fields[2])
+    except OSError:
+        return None
+    return best[1] if best else None
+
+
+def hardware_guesses(workspace):
+    """What the hardware part of the metadata template can be filled with.
+
+    Returns (guesses, source, hint): {key: (value, note)} for the template, the
+    node the hardware facts were read on, and a hint when they are missing.
+    The facts come from the workspace's node-topology.yaml, read on a compute
+    node, and only without one from the machine this runs on -- the login
+    node, typically, which is not what ran the job.
+    """
+    node_path = os.path.join(workspace, topology.NODE_FILE)
+    hint = None
+    if os.path.isfile(node_path):
+        try:
+            node = topology.load(node_path)
+        except ValueError as exc:
+            return {}, None, str(exc)
+        source = "%s, as %s describes it" % (node.get(topology.HOST_KEY, "?"),
+                                             topology.NODE_FILE)
+        if not any(node.get(k) for k in topology.INFO_KEYS):
+            hint = ("%s has no hardware facts yet; re-run benchmark.py "
+                    "--probe-node on a compute node to record them"
+                    % topology.NODE_FILE)
+    else:
+        node, _ = topology.detect()
+        source = "%s, the machine this runs on" % node.get(topology.HOST_KEY)
+
+    records = dataset_records()
+    guesses = {}
+
+    def guess(key, value, note):
+        if value not in (None, ""):
+            guesses[key] = (value, note)
+
+    cpu = node.get("cpu_name") and clean_cpu_name(node["cpu_name"])
+    guess("cpu", cpu, "the CPU's model name")
+    split = cpu and split_cpu(cpu)
+    if split:
+        family, model, submodel = split
+        guess("cpu_family", family, "from the CPU's model name")
+        guess("cpu_model", model, "from the CPU's model name")
+        guess("cpu_submodel", submodel, "from the CPU's model name")
+        gen, how = cpu_generation(family, model, submodel, records)
+        guess("cpu_generation", gen, how)
+        same = [r for r in records if same_cpu(r, family, submodel)]
+        bandwidth = most_common(r.get("CPU Memory Bandwidth [GB/s]")
+                                for r in same)
+        guess("cpu_memory_bandwidth_gb_s",
+              bandwidth and "%s GB/s" % bandwidth,
+              "per socket, as data/data.json has it for this CPU")
+        tdps = []
+        for r in same:
+            try:
+                nodes = float(r["Number of Nodes"])
+                if float(r["Number of CPU Cores"]) / nodes \
+                        == node["cores_per_node"]:
+                    tdps.append(int(round(float(r["System TDP [W]"]) / nodes)))
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                pass
+        tdp = most_common(tdps)
+        guess("tdp_per_node_w", tdp,
+              "from %d dataset run(s) with this CPU and %d cores per node"
+              % (len(tdps), node["cores_per_node"]))
+    if node.get("memory_kb"):
+        gib = int(node["memory_kb"]) / 2.0 ** 20
+        guess("memory_capacity_per_node", "%dGB" % memory_size(gib),
+              "MemTotal %.1f GiB, rounded up to the next 2^k or 1.5 x 2^k GB"
+              % gib)
+    if node.get("llc_kb"):
+        per_socket = (int(node["llc_kb"]) * node["l3_per_node"]
+                      // node["sockets"] // 1024)
+        guess("last_level_cache", "%dMB" % per_socket,
+              "per socket, like data/data.json")
+    guess("network_interconnect", node.get("interconnect"), "from /sys/class")
+    # Unlike the rest, read here: the workspace is the same file system for
+    # the login node as for the compute nodes.
+    guess("storage_file_system", file_system(workspace),
+          "the file system of the workspace, read here")
+    return guesses, source, hint
+
+
+def write_metadata_template(path, guesses=None, source=None):
+    """Write the template, filling in `guesses` ({key: (value, note)}).
+
+    Each filled-in value gets its note on the line above -- not after it, where
+    the flat reader would take it for part of the value -- and the hardware
+    section says once which node they were read on.
+    """
+    guesses = guesses or {}
     lines = []
     for key, value in METADATA_TEMPLATE:
         if value is None:
             lines.append(key)
+            if key.startswith("# --- hardware") and guesses and source:
+                lines.append("# Values with a '-- check' note were filled in "
+                             "from %s." % source)
+        elif key in guesses:
+            value, note = guesses[key]
+            lines.append("# %s -- check" % note)
+            lines.append("%s: %s" % (key, yaml_scalar(value)))
         else:
             lines.append("%s: %s" % (key, yaml_scalar(value)))
     with open(path, "w") as f:
@@ -864,16 +1075,18 @@ def find_workspace_meta(workspace):
     return None
 
 
-def template_todo():
+def template_todo(guesses=()):
     """The fields of the metadata template that only the contributor can fill.
 
-    The FIXME strings, plus the node TDP: it ships as ``0`` because it is a
-    number and cannot say FIXME, and left at zero it silently empties the
-    energy columns of every run in the submission.
+    These are the fields still holding a FIXME placeholder once `guesses` are
+    filled in, plus the node TDP unless a guess was found for it.  The TDP is
+    a number, so the template writes it as ``0`` rather than FIXME; left at
+    zero, it empties the energy columns of every run in the submission.
     """
     todo = [key for key, value in METADATA_TEMPLATE
-            if value is not None and str(value).startswith("FIXME")]
-    if "tdp_per_node_w" not in todo:
+            if value is not None and str(value).startswith("FIXME")
+            and key not in guesses]
+    if "tdp_per_node_w" not in todo and "tdp_per_node_w" not in guesses:
         todo.append("tdp_per_node_w")
     return todo
 
@@ -908,9 +1121,16 @@ def postprocess(args, workspace):
     meta_path = args.metadata or find_workspace_meta(workspace)
     if meta_path is None or not os.path.exists(meta_path):
         target = meta_path or os.path.join(workspace, META_WORKSPACE_NAMES[0])
-        write_metadata_template(target)
-        todo = template_todo()
+        guesses, source, hint = hardware_guesses(workspace)
+        write_metadata_template(target, guesses, source)
+        todo = template_todo(guesses)
         print("wrote a metadata template: %s" % target)
+        if guesses:
+            print("filled in %d hardware field(s), each marked in the file "
+                  "-- check them: %s" % (len(guesses),
+                                         ", ".join(sorted(guesses))))
+        if hint:
+            print("  ! %s" % hint)
         sys.exit(
             "error: this workspace has no metadata file, and the OpenFOAM "
             "logs cannot supply one.\n"
