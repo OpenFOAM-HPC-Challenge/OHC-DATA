@@ -1107,6 +1107,22 @@ def repo_submissions_dir():
     return None
 
 
+def other_decompositions(mesh_dir, decomposition):
+    """[(name, run directories)] of the decompositions other than
+    `decomposition` that `mesh_dir` holds runs of."""
+    found = []
+    for name in DECOMPOSITIONS:
+        if name == decomposition:
+            continue
+        dirs = sorted((d for d in os.listdir(mesh_dir)
+                       if parse_run_dirname(d, name) is not None
+                       and os.path.isdir(os.path.join(mesh_dir, d))),
+                      key=lambda d: parse_run_dirname(d, name))
+        if dirs:
+            found.append((name, dirs))
+    return found
+
+
 def postprocess(args, workspace):
     runs_dir = os.path.join(workspace, "runs")
     if not os.path.isdir(runs_dir):
@@ -1204,7 +1220,16 @@ def postprocess(args, workspace):
             runs.append(apply_metadata(run, meta))
 
         if not runs:
-            print("[%s] no runs with solver output" % mesh)
+            print("[%s] no %s runs%s" % (mesh, args.decomposition,
+                                         " with solver output"
+                                         if ncores_dirs else ""))
+            # The likeliest reason is a sweep of another decomposition, which
+            # lives in suffixed run directories this harvest does not look at.
+            for name, dirs in other_decompositions(mesh_dir,
+                                                   args.decomposition):
+                print("       but %d %s run(s): %s -- harvest them with "
+                      "--decomposition %s" % (len(dirs), name,
+                                              ", ".join(dirs), name))
             continue
 
         # Efficiency is a property of the sweep, so it needs every run of the
