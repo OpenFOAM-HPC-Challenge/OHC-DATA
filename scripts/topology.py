@@ -17,9 +17,15 @@ file is detected the first time and edited by hand afterwards;
 ``detected_on`` names the machine it was detected on, and is optional.
 
 Detection is Linux only and reads sysfs (``/sys/devices/system/{cpu,node}``),
-counting just the CPUs this process may run on.  Anywhere else, or where sysfs
-is incomplete -- some VMs, containers, ARM kernels -- a count falls back to a
-safe value and is marked in the file as not detected, to be filled in.
+counting every CPU the node has online -- not just those this process may run
+on, which inside a SLURM job step is the step's share of the node.  Anywhere
+else, or where sysfs is incomplete -- some VMs, containers, ARM kernels -- a
+count falls back to a safe value and is marked in the file as not detected,
+to be filled in.
+
+Below the counts, the file keeps a few hardware facts read on the same node
+-- CPU name, memory, last-level cache size, interconnect -- from which
+postprocess.py fills the hardware part of its metadata template.
 
 Standard library only, like the rest of these scripts.
 """
@@ -41,6 +47,10 @@ UNDETECTED = "# not detected -- fill in"
 # Optional, and not a count: the machine the counts were detected on.
 HOST_KEY = "detected_on"
 
+# Optional hardware facts, kept as read: the CPU's model name, MemTotal and the
+# size of one last-level cache in kB, and the interconnect.
+INFO_KEYS = ("cpu_name", "memory_kb", "llc_kb", "interconnect")
+
 
 def _read(path):
     with open(path) as f:
@@ -61,7 +71,12 @@ def parse_cpulist(text):
     return cpus
 
 
-def _allowed_cpus():
+def _online_cpus(sysfs):
+    """The node's online CPUs, else those this process may use, else None."""
+    try:
+        return parse_cpulist(_read(os.path.join(sysfs, "cpu", "online")))
+    except (OSError, ValueError):
+        pass
     try:
         return set(os.sched_getaffinity(0))
     except AttributeError:          # not Linux
@@ -143,6 +158,80 @@ def _last_level_caches(cpu_dir, cpus):
     return len(groups)
 
 
+def _interconnect(classes):
+    """The high-speed network of this node, from /sys/class, or None."""
+    def entries(name):
+        try:
+            return sorted(os.listdir(os.path.join(classes, name)))
+        except OSError:
+            return []
+    if entries("cxi"):
+        return "HPE Slingshot 11"
+    best = None
+    for dev in entries("infiniband"):
+        ports = os.path.join(classes, "infiniband", dev, "ports")
+        try:
+            port_names = os.listdir(ports)
+        except OSError:
+            continue
+        for port in port_names:
+            try:
+                rate = _read(os.path.join(ports, port, "rate"))
+                layer = _read(os.path.join(ports, port, "link_layer"))
+            except OSError:
+                continue
+            m = re.match(r"(\d+) Gb/sec(?: \(\w+ (\w+)\))?", rate)
+            if not m or layer != "InfiniBand":
+                continue        # RoCE ports carry Ethernet, not InfiniBand
+            gbit = int(m.group(1))
+            name = ("Omni-Path %d Gb/s" % gbit if dev.startswith("hfi")
+                    else "InfiniBand %s%d Gb/s"
+                    % (m.group(2) + " " if m.group(2) else "", gbit))
+            if best is None or gbit > best[0]:
+                best = (gbit, name)
+    return best[1] if best else None
+
+
+def hardware(sysfs=SYSFS, proc="/proc", classes="/sys/class"):
+    """The INFO_KEYS facts this node can tell about itself, as far as read."""
+    info = {}
+    try:
+        for line in _read(os.path.join(proc, "cpuinfo")).splitlines():
+            if line.startswith("model name"):
+                info["cpu_name"] = " ".join(line.split(":", 1)[1].split())
+                break
+    except OSError:
+        pass
+    try:
+        m = re.search(r"(?m)^MemTotal:\s+(\d+) kB",
+                      _read(os.path.join(proc, "meminfo")))
+        if m:
+            info["memory_kb"] = int(m.group(1))
+    except OSError:
+        pass
+    # The size of the cache _last_level_caches() counts, read off CPU 0.
+    cache_dir = os.path.join(sysfs, "cpu", "cpu0", "cache")
+    try:
+        best = None
+        for name in os.listdir(cache_dir):
+            index = os.path.join(cache_dir, name)
+            if not re.match(r"index\d+$", name) \
+                    or _read(os.path.join(index, "type")) == "Instruction":
+                continue
+            level = int(_read(os.path.join(index, "level")))
+            m = re.match(r"(\d+)K$", _read(os.path.join(index, "size")))
+            if m and (best is None or level > best[0]):
+                best = (level, int(m.group(1)))
+        if best:
+            info["llc_kb"] = best[1]
+    except (OSError, ValueError):
+        pass
+    interconnect = _interconnect(classes)
+    if interconnect:
+        info["interconnect"] = interconnect
+    return info
+
+
 def detect(sysfs=SYSFS, cpus=None, platform=None):
     """This machine's node description as (node, undetected).
 
@@ -152,7 +241,7 @@ def detect(sysfs=SYSFS, cpus=None, platform=None):
     """
     platform = platform or sys.platform
     if cpus is None and platform.startswith("linux"):
-        cpus = _allowed_cpus()
+        cpus = _online_cpus(sysfs)
     logical = len(cpus) if cpus else (os.cpu_count() or 1)
 
     found = {}
@@ -186,6 +275,8 @@ def detect(sysfs=SYSFS, cpus=None, platform=None):
     node.setdefault("numa_per_node", node["sockets"])
     node.setdefault("l3_per_node", node["numa_per_node"])
     node[HOST_KEY] = socket.gethostname()
+    if platform.startswith("linux"):
+        node.update(hardware(sysfs))
     return node, [key for key in KEYS if key not in found]
 
 
@@ -210,6 +301,12 @@ def write(path, node, undetected):
         if key in undetected:
             line = "%-24s %s" % (line, UNDETECTED)
         lines.append(line)
+    info = [key for key in INFO_KEYS if node.get(key) not in (None, "")]
+    if info:
+        lines.append("")
+        lines.append("# Read on the same node, for postprocess.py's metadata "
+                     "template.")
+        lines.extend("%s: %s" % (key, node[key]) for key in info)
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -226,7 +323,7 @@ def load(path):
                 problems.append("unreadable line %r" % line)
                 continue
             key, value = (part.strip() for part in line.split(":", 1))
-            if key == HOST_KEY:
+            if key == HOST_KEY or key in INFO_KEYS:
                 node[key] = value
                 continue
             if key not in KEYS:
