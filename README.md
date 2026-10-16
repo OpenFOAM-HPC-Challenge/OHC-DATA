@@ -220,8 +220,11 @@ case with a hierarchical decomposition, so every run copy is compared with
 harvest whose decomposition is not hierarchical, or whose case differs, is
 written as Software Track, and the differences are printed file by file.
 Comments, layout and the settings `benchmark.py` writes into a run copy do not
-count as differences. `./scripts/case_manifest.py` writes the manifest when
-`CASE_REF` changes.
+count as differences, and neither does `controlDict.withWrite`, which the case
+allows for benchmarking the I/O as well. Changes to `Allrun` that adapt it to
+your site are printed as notes and do not count either, as long as `Allrun`
+still selects `fvSolution.fixedIter`, the setup the Hardware Track requires.
+`./scripts/case_manifest.py` writes the manifest when `CASE_REF` changes.
 
 `--format yaml` (the default) writes the fuller document, including the force
 coefficient history, and `--format both` writes the two. This repository

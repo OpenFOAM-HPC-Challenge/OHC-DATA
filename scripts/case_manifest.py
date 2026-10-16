@@ -13,6 +13,12 @@ on it is no change, while every keyword, value or ``#include`` is.  Not a
 change either is what benchmark.py itself writes into a run copy: nCores,
 decompositionMethod and nHierarchical in caseDefinition, the multiLevelCoeffs
 of decomposeParDict, endTime (``--end-time``) and the MPI launcher of Allrun.
+Nor is the choice of controlDict.withWrite over controlDict.noWrite, which the
+case allows for benchmarking the I/O as well.
+
+Allrun is adapted to the environment it runs in -- scheduler, OpenFOAM
+installation, MPI -- so its other differences are reported as notes; only the
+fvSolution variant it selects is a change of the case.
 
 Maintainers write the manifest from the pinned case, which is downloaded
 unless a checkout of it is given::
@@ -49,6 +55,9 @@ MASKED = (
     (r"system/controlDict(\..*)?$", ("endTime",)),
 )
 MASK = "<set by benchmark.py>"
+
+# The controlDict variants the case allows Allrun to select.
+CONTROL_DICTS = ("controlDict.noWrite", "controlDict.withWrite")
 
 # The launcher lines of Allrun, stock and as allrun_with_launcher() leaves
 # them; either is the stock launch.
@@ -118,6 +127,8 @@ def _shell_lines(text):
             continue
         if line in LAUNCHER_LINES:
             line = "parEx=%s" % MASK
+        if line in ["controlDict=%s" % name for name in CONTROL_DICTS]:
+            line = "controlDict=<%s>" % " or ".join(CONTROL_DICTS)
         lines.append(line)
     return lines
 
@@ -141,12 +152,23 @@ def build(case_dir, ref=CASE_REF):
         text = read(os.path.join(case_dir, rel.replace("/", os.sep)))
         files[rel] = {"digest": digest(normalize(rel, text)), "text": text}
     # Allrun copies the variant it is set to over system/controlDict and
-    # system/fvSolution, so after a run those hold the variant.
-    for name, variant in re.findall(r"(?m)^(controlDict|fvSolution)=(\S+)",
-                                    files.get("Allrun", {}).get("text", "")):
-        if "system/" + variant in files and "system/" + name in files:
-            files["system/" + name]["variant"] = "system/" + variant
+    # system/fvSolution, so after a run those hold the variant: any of the
+    # allowed controlDict variants, and the fvSolution one Allrun selects.
+    allowed = {"controlDict": list(CONTROL_DICTS),
+               "fvSolution": [selected_fvsolution(
+                   files.get("Allrun", {}).get("text", ""))]}
+    for name, variants in sorted(allowed.items()):
+        variants = ["system/" + v for v in variants if v
+                    and "system/" + v in files]
+        if variants and "system/" + name in files:
+            files["system/" + name]["variants"] = variants
     return {"case_path": CASE_PATH, "case_ref": ref, "files": files}
+
+
+def selected_fvsolution(allrun_text):
+    """The fvSolution variant an Allrun copies into place, or None."""
+    m = re.search(r"(?m)^\s*fvSolution=(\S+)", allrun_text)
+    return m.group(1) if m else None
 
 
 def load(path=MANIFEST):
@@ -161,8 +183,10 @@ def load(path=MANIFEST):
 def compare(run_dir, manifest):
     """How the case in `run_dir` differs from `manifest`.
 
-    Returns [(rel, kind, diff lines)], kind one of 'changed', 'missing' and
-    'extra'; the diff, of the compared lines, only for 'changed'.
+    Returns [(rel, kind, diff lines)], kind one of 'changed', 'missing',
+    'extra' and 'noted' -- a difference of Allrun that leaves the fvSolution
+    variant it selects as it is; the diff, of the compared lines, only for
+    'changed' and 'noted'.
     """
     files = manifest["files"]
     present = case_files(run_dir)
@@ -174,21 +198,20 @@ def compare(run_dir, manifest):
         if rel not in files:
             found.append((rel, "extra", []))
             continue
-        lines = normalize(rel, read(os.path.join(run_dir,
-                                                 rel.replace("/", os.sep))))
-        entry = files[rel]
-        reference = entry
-        if digest(lines) == entry["digest"]:
+        text = read(os.path.join(run_dir, rel.replace("/", os.sep)))
+        lines = normalize(rel, text)
+        candidates = [rel] + files[rel].get("variants", [])
+        if digest(lines) in [files[c]["digest"] for c in candidates]:
             continue
-        if entry.get("variant"):
-            reference = files[entry["variant"]]
-            if digest(lines) == reference["digest"]:
-                continue
-        ref_rel = rel if reference is entry else entry["variant"]
-        diff = difflib.unified_diff(normalize(ref_rel, reference["text"]),
+        ref_rel = candidates[-1]
+        diff = difflib.unified_diff(normalize(ref_rel, files[ref_rel]["text"]),
                                     lines, "manifest/" + ref_rel, rel,
                                     n=2, lineterm="")
-        found.append((rel, "changed", list(diff)))
+        kind = "changed"
+        if rel == "Allrun" and selected_fvsolution(text) == \
+                selected_fvsolution(files[rel]["text"]):
+            kind = "noted"
+        found.append((rel, kind, list(diff)))
     return found
 
 

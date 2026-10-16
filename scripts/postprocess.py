@@ -1124,8 +1124,9 @@ def check_track(args, meta, runs_dir):
     The Hardware Track is the stock case, as data/case-manifest.json pins it,
     with a hierarchical decomposition.  Runs that deviate from either make the
     harvest a Software Track one, whatever meta.yaml declares, and what
-    differs from the manifest is printed.  A declared Software Track stays: a
-    modified OpenFOAM does not show in the case.
+    differs from the manifest is printed.  Edits of Allrun that keep its
+    fvSolution variant are printed as notes and do not count.  A declared
+    Software Track stays: a modified OpenFOAM does not show in the case.
     """
     declared = meta.get("track", HARDWARE_TRACK)
     category = meta.get("software_optimization_category", "Other")
@@ -1158,18 +1159,27 @@ def check_track(args, meta, runs_dir):
                     changes.setdefault((rel, kind, tuple(diff)), []).append(
                         "%s/%s" % (mesh, entry))
         ref = manifest["case_ref"][:8]
-        if changes:
+        counted = {k: v for k, v in changes.items() if k[1] != "noted"}
+        noted = {k: v for k, v in changes.items() if k[1] == "noted"}
+        if counted:
             reasons.append("case differs from upstream %s" % ref)
             print("case:      differs from the upstream case at %s "
                   "(%s) in %d file(s):"
                   % (ref, os.path.relpath(case_manifest.MANIFEST, REPO),
-                     len({rel for rel, _, _ in changes})))
-            for (rel, kind, diff), runs in sorted(changes.items()):
-                print("  %s %s -- %s" % (kind, rel, ", ".join(runs)))
-                for line in diff:
-                    print("      %s" % line)
+                     len({rel for rel, _, _ in counted})))
         else:
             print("case:      as upstream at %s" % ref)
+        for (rel, kind, diff), runs in sorted(counted.items()):
+            print("  %s %s -- %s" % (kind, rel, ", ".join(runs)))
+            for line in diff:
+                print("      %s" % line)
+        # Allrun is meant to be adapted to the site, so those differences are
+        # shown without counting for the track.
+        for (rel, kind, diff), runs in sorted(noted.items()):
+            print("  note: %s adapted to the environment, which does not "
+                  "change the track -- %s" % (rel, ", ".join(runs)))
+            for line in diff:
+                print("      %s" % line)
 
     track = SOFTWARE_TRACK if reasons or declared == SOFTWARE_TRACK \
         else HARDWARE_TRACK
