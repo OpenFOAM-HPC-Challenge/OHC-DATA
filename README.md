@@ -3,62 +3,68 @@
 Results of the [OpenFOAM HPC Challenge](https://exafoam.eu/hpc-challenge/),
 collected as one dataset.
 
-- [The dataset](#the-dataset)
-- [Generating the submission data](#generating-the-submission-data)
-  - [Requirements](#requirements)
-  - [Quick start](#quick-start)
-  - [Detailed guide](#detailed-guide)
-  - [Options of benchmark.py](#options-of-benchmarkpy)
-- [Contributing results](#contributing-results)
+- [OHC-DATA](#ohc-data)
+  - [The dataset](#the-dataset)
+  - [Generating the submission data](#generating-the-submission-data)
+    - [Requirements](#requirements)
+    - [Quick start](#quick-start)
+    - [Detailed guide](#detailed-guide)
+      - [1. Prepare the runs](#1-prepare-the-runs)
+      - [2. Adapt the SLURM template](#2-adapt-the-slurm-template)
+      - [3. Describe a compute node](#3-describe-a-compute-node)
+      - [4. Submit the runs](#4-submit-the-runs)
+      - [5. Harvest the results](#5-harvest-the-results)
+      - [6. Validate and submit](#6-validate-and-submit)
+    - [Options of benchmark.py](#options-of-benchmarkpy)
+  - [Contributing results](#contributing-results)
 
 ## The dataset
 
-`data/data.json` is the single source of truth: one record per simulation, the
-43 measured columns plus `OHC` (which round, 1 or 2) and `Submission Date`.
-Every result -- whole rounds and individual submissions alike -- is appended
-here, and nothing reads from a second dataset. `Overview.ipynb` plots over it.
+`data/data.json` is the dataset: one record per simulation, with the 43
+measured columns plus `OHC` (the round, 1 or 2) and `Submission Date`. Every
+result, from complete rounds to individual submissions, is appended to this
+file, and no other dataset is read. `Overview.ipynb` plots from it.
 
 ![Time-to-solution against core count, Hardware Track](assets/submissions_overview.svg)
 
 ![Contributed runs per CPU family, stacked by generation](assets/submissions_overview_cpu.svg)
 
-Both are the Hardware Track overview plots of the challenge notebooks, drawn
-straight from `data/data.json` by `scripts/plot_overview.py` -- standard
+Both are the Hardware Track overview plots of the challenge notebooks.
+`scripts/plot_overview.py` draws them from `data/data.json`, using the standard
 library only, like the rest of `scripts/`. The `overview-figures` workflow
-redraws and commits them whenever the dataset changes, so they never fall
-behind the data; `./scripts/plot_overview.py` redraws them locally.
+redraws and commits them whenever the dataset changes, so they stay in step
+with the data; `./scripts/plot_overview.py` redraws them locally.
 
-Neither round recorded a submission date, so every record of a round carries
-the date of the workshop its results were presented at -- 2025-06-30 for OHC1,
-2026-06-29 for OHC2.
+Every record of a round has the date of the workshop where its results were
+presented: 2025-06-30 for OHC1 and 2026-06-29 for OHC2.
 
 ## Generating the submission data
 
-`scripts/` holds a pair of drivers for the occDrivAer static-mesh case:
-`benchmark.py` sets the runs up, `postprocess.py` reads them back out again.
+`scripts/` contains two drivers for the occDrivAer static-mesh case:
+`benchmark.py` sets up the runs, and `postprocess.py` extracts the results from
+them.
 
 ### Requirements
 
-- **Python 3.6 or newer.** The scripts use the standard library only, so
-  there is nothing to install; downloading and extracting are done by Python
-  itself.
-- **An ESI OpenFOAM build** the jobs can load -- the environment part of the
-  SLURM template sets it up -- with the tools `Allrun` runs: `decomposePar`,
+- Python 3.6 or newer. The scripts use only the standard library, so nothing
+  needs to be installed; Python itself does the downloading and extracting.
+- An ESI OpenFOAM build that the jobs can load (the environment part of the
+  SLURM template sets it up), with the tools `Allrun` runs: `decomposePar`,
   `renumberMesh`, `potentialFoam`, `applyBoundaryLayer` and `simpleFoam`. The
   `scotch` and `multilevel-*` decompositions need OpenFOAM built with that
-  library; `benchmark.py` checks for it when the OpenFOAM environment is
-  loaded and stops if only the dummy stub is there.
-- **SLURM** on a cluster: `sbatch` submits the runs and the probe job. On a
-  workstation, run each copy's `Allrun` directly instead.
-- **Linux** to detect the compute node; anywhere else, fill in
+  library. `benchmark.py` checks for it when the OpenFOAM environment is
+  loaded and stops if only the dummy stub is installed.
+- SLURM on a cluster, for submitting the runs and the probe job with `sbatch`.
+  On a workstation, run `Allrun` in each run copy instead.
+- Linux, to detect the compute node. On other systems, fill in
   `node-topology.yaml` by hand.
-- **Internet access** where `benchmark.py` runs: the case comes from
-  develop.openfoam.com, the meshes from Zenodo. `--polymesh` takes a mesh you
-  already have instead.
-- **Disk space** in the workspace: the mesh downloads are 3.2 GB (coarse),
-  5.9 GB (medium) and 11.5 GB (fine). The coarse mesh takes about 7 GB
-  extracted, and each coarse run about 11 GB once decomposed; medium and fine
-  scale roughly with their cell count.
+- Internet access where `benchmark.py` runs: the case comes from
+  develop.openfoam.com and the meshes from Zenodo. `--polymesh` uses a mesh
+  you already have instead.
+- Disk space in the workspace. The mesh downloads are 3.2 GB (coarse), 5.9 GB
+  (medium) and 11.5 GB (fine). Extracted, the coarse mesh takes about 7 GB,
+  and each coarse run about 11 GB once decomposed; medium and fine scale
+  roughly with their cell count.
 
 ### Quick start
 
@@ -76,7 +82,7 @@ W=/scratch/$USER/occDrivAer
 # 2. Adapt $W/slurm.template to your site: account, partition, time limit,
 #    and the environment that loads OpenFOAM.
 
-# 3. Describe a compute node rather than the login node (skip this on a
+# 3. Describe a compute node instead of the login node (skip this on a
 #    workstation): writes $W/probe.slurm, a one-node job that does it.
 ./scripts/benchmark.py --probe-node --workspace $W
 (cd $W && sbatch probe.slurm)
@@ -94,135 +100,132 @@ W=/scratch/$USER/occDrivAer
 ./scripts/validate_submission.py submissions/<YYYYMMDD>_<suffix>
 ```
 
-The sections below explain each step and list the options of
-`benchmark.py`.
-
 ### Detailed guide
 
 #### 1. Prepare the runs
 
-The `benchmark.py` script automates the preprocessing procedure of downloading
-the case and the meshes, and decomposing according to the provided number of
-ranks. Nothing has to be in place first:
+The `benchmark.py` script automates the preprocessing: it downloads the case
+and the meshes and decomposes them for the given numbers of ranks. Nothing has
+to be in place beforehand:
 
 ```sh
 ./scripts/benchmark.py --mesh coarse --ncores 128,256,512 \
                        --workspace /scratch/$USER/occDrivAer
 ```
 
-That fetches the
+This downloads the
 [occDrivAerStaticMesh case](https://develop.openfoam.com/committees/hpc/-/tree/84c262431117f5c921db8335e368a12d0e9fa3f0/incompressible/simpleFoam/occDrivAerStaticMesh)
 from the OpenFOAM HPC committee repository into `<workspace>/case`, at the
-commit `CASE_REF` in `scripts/common.py` pins, downloads the requested polyMesh
-resolutions from Zenodo (fine, medium and coarse -- all three unless `--mesh`
-says otherwise), builds one case copy per mesh and core count with the mesh
+commit pinned by `CASE_REF` in `scripts/common.py`, and the requested polyMesh
+resolutions from Zenodo (coarse, medium and fine, unless `--mesh` selects
+fewer). It then builds one case copy per mesh and core count, with the mesh
 symlinked to the shared copy, writes the hierarchical decomposition into each
 copy's `system/include/caseDefinition`, and renders a SLURM script beside it.
 It also writes the SLURM template (step 2) and the description of the machine
 it runs on (step 3); while either of them is new, it submits nothing.
 
 Both downloads happen once and are reused, so a second invocation against the
-same workspace touches the network not at all. A mesh you already have can be
-copied into the workspace instead: `--polymesh DIR` names its `polyMesh`
-directory, and `--mesh` the one resolution it is. If you drop the scripts into a
-case checkout of your own, that case is used instead of the upstream one --
-so local modifications are never silently replaced.
+same workspace downloads nothing. A mesh you already have can be copied into
+the workspace instead: `--polymesh DIR` gives its `polyMesh` directory, and
+`--mesh` the one resolution it is. If you put the scripts into a case checkout
+of your own, that case is used instead of the upstream one, so your local
+modifications are kept.
 
 #### 2. Adapt the SLURM template
 
 The sbatch directives come from `<workspace>/slurm.template`, which the first
-invocation writes from the built-in default. That default is a starting point,
-not a portable one: set the account, partition, time limit (24 hours by
-default) and the environment that loads OpenFOAM on your site. Every
-`run.slurm` is rendered from it again on each invocation, so editing the
-template and re-running is all a change takes.
+invocation writes from the built-in default. The default is not set up for any
+particular site: set the account, partition, time limit (24 hours by default)
+and the environment that loads OpenFOAM. Each invocation renders every
+`run.slurm` from the template again, so after editing it, run the same
+command again.
 
 The runs launch their parallel steps with `srun -n`, which the template
-exports as `MPI_LAUNCHER`; the `--ranks-per-domain` runs, whose placement flags
-are Open MPI options, keep `mpirun -np`.
+exports as `MPI_LAUNCHER`. The `--ranks-per-domain` runs keep `mpirun -np`,
+because their placement flags are Open MPI options.
 
 #### 3. Describe a compute node
 
-What a compute node looks like comes from `<workspace>/node-topology.yaml`:
+The description of a compute node comes from `<workspace>/node-topology.yaml`:
 sockets, NUMA domains, L3 caches, physical cores and hardware threads per
 node, the machine they were detected on, which every run shows, and the CPU,
-memory and interconnect `postprocess.py` describes the hardware with. Tasks
-per node, the `multilevel-*` decompositions and the `--ranks-per-domain` sweep
-take their defaults from it.
+memory and interconnect that `postprocess.py` describes the hardware with.
+Tasks per node, the `multilevel-*` decompositions and the `--ranks-per-domain`
+sweep take their defaults from it.
 
 The first invocation detects the machine it runs on (Linux only; counts it
-cannot read are marked in the file). On a workstation that is the right
-machine; on a cluster the login node may not be. `--probe-node` rewrites the
-file and writes `<workspace>/probe.slurm` from the template, a one-node job
-that probes a compute node:
+cannot read are marked in the file). On a workstation, that is the machine the
+runs use; on a cluster, it may be the login node instead. `--probe-node`
+rewrites the file and writes `<workspace>/probe.slurm` from the template, a
+one-node job that probes a compute node:
 
 ```sh
 ./scripts/benchmark.py --probe-node --workspace /scratch/$USER/occDrivAer
 (cd /scratch/$USER/occDrivAer && sbatch probe.slurm)
 ```
 
-Adapt the template first: the probe job runs with its account, partition and
-environment.
+Adapt the template first, because the probe job uses its account, partition
+and environment.
 
 #### 4. Submit the runs
 
-Once the template and the node description are right -- the probe job has
-finished -- the same command as in step 1 with `--submit` renders every
-`run.slurm` again and queues them:
+Once the template is adapted and the probe job has finished, run the command
+from step 1 again with `--submit`. It renders every `run.slurm` again and
+queues the runs:
 
 ```sh
 ./scripts/benchmark.py --mesh coarse --ncores 128,256,512 \
                        --workspace /scratch/$USER/occDrivAer --submit
 ```
 
-Without `--submit` it prints the `sbatch` command of each run instead. On a
+Without `--submit`, it prints the `sbatch` command of each run instead. On a
 workstation, run `./Allrun` in each run copy under `<workspace>/runs/`.
 
 #### 5. Harvest the results
 
-Once the queue is through, `postprocess.py` reads the `logFiles/` and
-`postProcessing/` output back out of the same workspace:
+Once the runs have finished, `postprocess.py` reads their `logFiles/` and
+`postProcessing/` output from the same workspace:
 
 ```sh
 ./scripts/postprocess.py --workspace /scratch/$USER/occDrivAer --format json
 ```
 
 The first invocation writes `<workspace>/meta.yaml` and stops. That file
-holds everything no OpenFOAM log can know: your participant ID, affiliation
-and e-mail, the CPU and memory description, the interconnect, and the
-per-node TDP the energy figures are derived from. The hardware part is filled
-in as far as it can be -- from the compute node `node-topology.yaml`
-describes (so on a cluster, probe one first), from `data/data.json` for CPUs
-it already knows, and from the workspace's file system -- with a note above
-each value saying where it came from. Check those, fill in the remaining
-`FIXME` fields, then run the same command again.
+contains everything the OpenFOAM logs cannot provide: your participant ID,
+affiliation and e-mail, the CPU and memory description, the interconnect, and
+the per-node TDP from which the energy figures are derived. The hardware part
+is filled in as far as possible, with a note above each value saying where it
+came from. The sources are the compute node described in `node-topology.yaml`
+(so on a cluster, probe one first), `data/data.json` for CPUs it already
+contains, and the workspace's file system. Check those values, fill in the
+remaining `FIXME` fields, then run the same command again.
 
 It then prints a scaling table per mesh and writes one submission per mesh,
 together with a copy of `meta.yaml`, to
 `submissions/<YYYYMMDD>_<suffix>/<machine>/` of this checkout (or of the
-workspace when the script runs outside one): `<suffix>` is your handle,
+workspace when the script runs outside one). `<suffix>` is your handle,
 `legend_suffix` in `meta.yaml`, and the file is named after the machine and
-the cell count -- `OHC1_DrivAer_hawk_65M.json`. Runs that never reached the
-requested iteration count are harvested as well and marked partial, so a sweep
-can be inspected while the queue is still working through it.
+the cell count, for example `OHC1_DrivAer_hawk_65M.json`. Runs that did not
+reach the requested iteration count are harvested as well and marked partial,
+so a sweep can be inspected while other runs are still queued.
 
-One sweep is one decomposition. The default harvests the
-`hierarchical-doubling` runs; `--decomposition scotch` (or any other name
-`benchmark.py` took) harvests that decomposition's run directories instead and
-writes them to a folder of its own, so the submissions do not overwrite each
-other.
+One sweep is one decomposition. By default, the `hierarchical-doubling` runs
+are harvested; `--decomposition scotch` (or any other name `benchmark.py`
+accepted) harvests that decomposition's run directories instead and writes
+them to a folder of their own, so the submissions do not overwrite each other.
 
 The track follows from what was run. A Hardware Track result uses the stock
 case with a hierarchical decomposition, so every run copy is compared with
-`data/case-manifest.json`, which records the case at the pinned commit; a
+`data/case-manifest.json`, which records the case at the pinned commit. A
 harvest whose decomposition is not hierarchical, or whose case differs, is
 written as Software Track, and the differences are printed file by file.
-Comments, layout and what `benchmark.py` itself sets in a run copy do not
-count. `./scripts/case_manifest.py` writes the manifest when `CASE_REF` moves.
+Comments, layout and the settings `benchmark.py` writes into a run copy do not
+count as differences. `./scripts/case_manifest.py` writes the manifest when
+`CASE_REF` changes.
 
 `--format yaml` (the default) writes the fuller document, including the force
-coefficient history, and `--format both` writes the two. The JSON is the one
-this repository ingests.
+coefficient history, and `--format both` writes the two. This repository
+ingests the JSON.
 
 #### 6. Validate and submit
 
@@ -233,50 +236,51 @@ the same check the pull request runs:
 ./scripts/validate_submission.py submissions/<YYYYMMDD>_<suffix>
 ```
 
-Then open a pull request with the submission folder, as
-[Contributing results](#contributing-results) describes.
+Then open a pull request with the submission folder, as described in
+[Contributing results](#contributing-results).
 
 ### Options of benchmark.py
 
-The options worth knowing about:
+The main options:
 
 | Option | What it does | Default |
 | --- | --- | --- |
-| `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` names them all. | all three -- `coarse,medium,fine` |
-| `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
+| `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` selects all of them. | `coarse,medium,fine` |
+| `--workspace PATH` | Where the case, the meshes and the run copies are stored. | `workspace/` under the current directory |
 | `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
-| `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to name its single resolution, which the cell count in its `owner` header is checked against. | the Zenodo mesh |
-| `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
-| `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
-| `--probe-node` | Only detects the topology of the machine it runs on, writes it to `<workspace>/node-topology.yaml`, replacing what is there, and writes `<workspace>/probe.slurm`, a job that does the same on a compute node. | off -- `node-topology.yaml` is detected once, on first use |
-| `--ntasks-per-node N` | Sets the ranks per node the node count is derived from. | `cores_per_node` from `node-topology.yaml` |
-| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
-| `--decomposition NAME` | Picks the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet minimising interface area against the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
-| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node, over the domains `node-topology.yaml` describes. | no placement sweep; `--bind-object numa` |
+| `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to give its single resolution, which is checked against the cell count in its `owner` header. | the Zenodo mesh |
+| `--download-case` | Uses the upstream case even when the script is in a case checkout. | off |
+| `--slurm-template FILE` | Takes the sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
+| `--probe-node` | Only detects the topology of the machine it runs on, writes it to `<workspace>/node-topology.yaml`, replacing what is there, and writes `<workspace>/probe.slurm`, a job that does the same on a compute node. | off; `node-topology.yaml` is detected once, on first use |
+| `--ntasks-per-node N` | Sets the ranks per node from which the node count is derived. | `cores_per_node` from `node-topology.yaml` |
+| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset; the sweep comes from `--ncores` |
+| `--decomposition NAME` | Selects the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet with the smallest interface area for the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, with that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
+| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps the MPI rank placement inside a node, over the domains described in `node-topology.yaml`. | no placement sweep; `--bind-object numa` |
 | `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
 
-`./scripts/benchmark.py --help` lists the rest.
+`./scripts/benchmark.py --help` lists the other options.
 
 ## Contributing results
 
-1. Fork this repository
-2. Produce a JSON submission -- as described above, or manually.
+1. Fork this repository.
+2. Produce a JSON submission, as described above or by hand.
 3. Open a pull request that adds it under `submissions/`.
 
-`submissions/README.md` documents the file format and every field;
-`scripts/ohc_schema.py` is the schema itself -- fields, ranges and derived
-quantities -- and is what the validator checks against.
+`submissions/README.md` documents the file format and every field.
+`scripts/ohc_schema.py` is the schema itself (fields, ranges and derived
+quantities), and the validator checks against it.
 
 Opening the pull request runs `validate-submission`, which reports each
 record's problems on the pull request, previews the rows that would be added,
-and draws a plot of where the new runs land among the published ones. Merging it runs `append-submissions`, which appends those rows to
-`data/data.json` and commits the result -- so `data/data.json` is never edited
-by hand. The append is keyed by the SHA-256 of each submission file in
-`data/submissions.lock.json`, so it never runs twice for the same file.
+and plots the new runs together with the published ones. Merging it runs
+`append-submissions`, which appends those rows to `data/data.json` and commits
+the result, so `data/data.json` is never edited by hand. The append is keyed
+by the SHA-256 of each submission file in `data/submissions.lock.json`, so it
+never runs twice for the same file.
 
-A pull request is public and carries your name in the repository's history.
-Additionally, results can be submitted anonymously instead: send either the JSON files described here or the
-traditional Excel workbooks to Mark Wasserman (mawasserman@nvidia.com),
-Sergey Lesnik (sergey.lesnik@wikki-gmbh.de), or Gregor Olenik
-(<gregor.olenik@tum.de>), and one of them will add them to the dataset on your
-behalf.
+A pull request is public and shows your name in the repository's history. To
+submit anonymously instead, send either the JSON files described here or the
+traditional Excel workbooks to Mark Wasserman (mawasserman@nvidia.com), Sergey
+Lesnik (sergey.lesnik@wikki-gmbh.de) or Gregor Olenik
+(<gregor.olenik@tum.de>), and one of them will add them to the dataset for
+you.
