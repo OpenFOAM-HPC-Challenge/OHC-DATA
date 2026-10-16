@@ -225,6 +225,19 @@ def parse_solver_log(path):
                 if m:
                     out["requested_iterations"] = int(m.group(1))
                 continue
+            # The verdict of the case's wallClockTimeStatistics function
+            # object, printed when the solver ends.
+            m = re.match(r"\s*Number of measured time steps = (\d+)", line)
+            if m:
+                out["timed_steps"] = int(m.group(1))
+                continue
+            m = re.match(r"\s*Minimum number of measured time steps for "
+                         r"([0-9.]+)% error at 95% confidence level = (\d+)",
+                         line)
+            if m:
+                out["timing_error_percent"] = float(m.group(1))
+                out["timed_steps_required"] = int(m.group(2))
+                continue
 
             # Everything below is a banner field.  They are written once, at
             # the very top, as 'Name   : value' -- setdefault keeps that first
@@ -484,6 +497,9 @@ def collect_run(run_dir, mesh, window):
         "wall_clock_per_iteration_median_s": (
             sorted(per_step)[len(per_step) // 2] if per_step else None),
         "wall_clock_samples": len(per_step),
+        "timed_steps": banner.get("timed_steps"),
+        "timed_steps_required": banner.get("timed_steps_required"),
+        "timing_error_percent": banner.get("timing_error_percent"),
     }
 
     if stats:
@@ -639,6 +655,34 @@ def format_fvops_table(mesh, runs):
     for run in untimed:
         lines.append("  %-13s no wall-clock samples, excluded from the table"
                      % run["name"])
+    lines.extend(timing_warnings(runs))
+    return lines
+
+
+def timing_warnings(runs):
+    """Lines for the runs whose timings the case's wallClockTimeStatistics
+    function object judges too short to be measured within its error.
+
+    It prints its verdict when the solver ends, so a run that is still going
+    or was killed has none.  With fvSolution.fixedIter, the Hardware Track
+    setup, every time step should take as long as the others, so the case
+    asks for that verdict to be taken seriously.
+    """
+    lines = []
+    for run in runs:
+        prov = run["provenance"]
+        steps, required = prov.get("timed_steps"), prov.get("timed_steps_required")
+        if steps is None or required is None:
+            if not prov.get("is_partial"):
+                lines.append("  ! %s: no wall-clock statistics in the solver "
+                             "log" % run["name"])
+            continue
+        if steps < required:
+            lines.append("  ! %s: %d timed step(s), fewer than the %d the "
+                         "wall-clock statistics need for a %g%% error at 95%% "
+                         "confidence -- raise endTime"
+                         % (run["name"], steps, required,
+                            prov.get("timing_error_percent") or 2))
     return lines
 
 

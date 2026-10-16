@@ -209,6 +209,13 @@ the cell count, for example `OHC1_DrivAer_hawk_65M.json`. Runs that did not
 reach the requested iteration count are harvested as well and marked partial,
 so a sweep can be inspected while other runs are still queued.
 
+A run does not need all 4000 iterations: the dataset compares results by
+their time per iteration, and extrapolates it to 4000 iterations for the
+to-solution columns. A run does need enough time steps for a reliable time
+per iteration. The case's `wallClockTimeStatistics` function object computes
+how many time steps that takes for a 2% error at 95% confidence, and
+`postprocess.py` warns below the table when a run has fewer.
+
 One sweep is one decomposition. By default, the `hierarchical-doubling` runs
 are harvested; `--decomposition scotch` (or any other name `benchmark.py`
 accepted) harvests that decomposition's run directories instead and writes
@@ -259,7 +266,7 @@ The main options:
 | `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset; the sweep comes from `--ncores` |
 | `--decomposition NAME` | Selects the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet with the smallest interface area for the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, with that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
 | `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps the MPI rank placement inside a node, over the domains described in `node-topology.yaml`. | no placement sweep; `--bind-object numa` |
-| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
+| `--end-time N` | Shortens the runs, e.g. for a placement or tuning sweep. The dataset compares results by their time per iteration and extrapolates it to 4000 iterations for the to-solution columns, so a shorter run counts as well, as long as it has enough time steps for the acceptable wall-clock statistics of the case. | the case's own `endTime`, 4000 upstream |
 
 `./scripts/benchmark.py --help` lists the other options.
 
