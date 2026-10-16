@@ -7,8 +7,8 @@ collected as one dataset.
 - [Generating the submission data](#generating-the-submission-data)
   - [Requirements](#requirements)
   - [Quick start](#quick-start)
-  - [1. Set the runs up](#1-set-the-runs-up)
-  - [2. Harvest the finished runs](#2-harvest-the-finished-runs)
+  - [Detailed guide](#detailed-guide)
+  - [Options of benchmark.py](#options-of-benchmarkpy)
 - [Contributing results](#contributing-results)
 
 ## The dataset
@@ -94,9 +94,12 @@ W=/scratch/$USER/occDrivAer
 ./scripts/validate_submission.py submissions/<YYYYMMDD>_<suffix>
 ```
 
-Sections 1 and 2 below explain these commands and their options.
+The sections below explain each step and list the options of
+`benchmark.py`.
 
-### 1. Set the runs up
+### Detailed guide
+
+#### 1. Prepare the runs
 
 The `benchmark.py` script automates the preprocessing procedure of downloading
 the case and the meshes, and decomposing according to the provided number of
@@ -115,34 +118,8 @@ resolutions from Zenodo (fine, medium and coarse -- all three unless `--mesh`
 says otherwise), builds one case copy per mesh and core count with the mesh
 symlinked to the shared copy, writes the hierarchical decomposition into each
 copy's `system/include/caseDefinition`, and renders a SLURM script beside it.
-Add `--submit` to queue them straight away, or submit the generated
-`run.slurm` files yourself.
-
-The sbatch directives come from `<workspace>/slurm.template`. The first
-invocation writes it from the built-in default and does not submit even with
-`--submit`, because that default is a starting point, not a portable one: set
-the account, partition, time limit (24 hours by default) and environment your
-site needs, then run the same command again to re-render every `run.slurm`
-from it. The runs launch their parallel steps with `srun -n`, which the
-template exports as `MPI_LAUNCHER`; the `--ranks-per-domain` runs, whose
-placement flags are Open MPI options, keep `mpirun -np`.
-
-What a compute node looks like comes from `<workspace>/node-topology.yaml`:
-sockets, NUMA domains, L3 caches, physical cores and hardware threads per
-node, the machine they were detected on, which every run shows, and the CPU,
-memory and interconnect `postprocess.py` describes the hardware with. Tasks
-per node, the `multilevel-*` decompositions and the `--ranks-per-domain` sweep
-take their defaults from it. The first invocation detects the machine it runs
-on (Linux only; counts it cannot read are marked in the file) and, like a
-fresh template, does not submit. On a workstation that is the right machine;
-on a cluster the login node may not be. `--probe-node` rewrites the file and
-writes `<workspace>/probe.slurm` from the template, a one-node job that probes
-a compute node; submit it, and once it has finished, run `benchmark.py` again:
-
-```sh
-./scripts/benchmark.py --probe-node --workspace /scratch/$USER/occDrivAer
-(cd /scratch/$USER/occDrivAer && sbatch probe.slurm)
-```
+It also writes the SLURM template (step 2) and the description of the machine
+it runs on (step 3); while either of them is new, it submits nothing.
 
 Both downloads happen once and are reused, so a second invocation against the
 same workspace touches the network not at all. A mesh you already have can be
@@ -151,26 +128,57 @@ directory, and `--mesh` the one resolution it is. If you drop the scripts into a
 case checkout of your own, that case is used instead of the upstream one --
 so local modifications are never silently replaced.
 
-The options worth knowing about:
+#### 2. Adapt the SLURM template
 
-| Option | What it does | Default |
-| --- | --- | --- |
-| `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` names them all. | all three -- `coarse,medium,fine` |
-| `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
-| `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
-| `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to name its single resolution, which the cell count in its `owner` header is checked against. | the Zenodo mesh |
-| `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
-| `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
-| `--probe-node` | Only detects the topology of the machine it runs on, writes it to `<workspace>/node-topology.yaml`, replacing what is there, and writes `<workspace>/probe.slurm`, a job that does the same on a compute node. | off -- `node-topology.yaml` is detected once, on first use |
-| `--ntasks-per-node N` | Sets the ranks per node the node count is derived from. | `cores_per_node` from `node-topology.yaml` |
-| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
-| `--decomposition NAME` | Picks the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet minimising interface area against the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
-| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node, over the domains `node-topology.yaml` describes. | no placement sweep; `--bind-object numa` |
-| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
+The sbatch directives come from `<workspace>/slurm.template`, which the first
+invocation writes from the built-in default. That default is a starting point,
+not a portable one: set the account, partition, time limit (24 hours by
+default) and the environment that loads OpenFOAM on your site. Every
+`run.slurm` is rendered from it again on each invocation, so editing the
+template and re-running is all a change takes.
 
-`./scripts/benchmark.py --help` lists the rest.
+The runs launch their parallel steps with `srun -n`, which the template
+exports as `MPI_LAUNCHER`; the `--ranks-per-domain` runs, whose placement flags
+are Open MPI options, keep `mpirun -np`.
 
-### 2. Harvest the finished runs
+#### 3. Describe a compute node
+
+What a compute node looks like comes from `<workspace>/node-topology.yaml`:
+sockets, NUMA domains, L3 caches, physical cores and hardware threads per
+node, the machine they were detected on, which every run shows, and the CPU,
+memory and interconnect `postprocess.py` describes the hardware with. Tasks
+per node, the `multilevel-*` decompositions and the `--ranks-per-domain` sweep
+take their defaults from it.
+
+The first invocation detects the machine it runs on (Linux only; counts it
+cannot read are marked in the file). On a workstation that is the right
+machine; on a cluster the login node may not be. `--probe-node` rewrites the
+file and writes `<workspace>/probe.slurm` from the template, a one-node job
+that probes a compute node:
+
+```sh
+./scripts/benchmark.py --probe-node --workspace /scratch/$USER/occDrivAer
+(cd /scratch/$USER/occDrivAer && sbatch probe.slurm)
+```
+
+Adapt the template first: the probe job runs with its account, partition and
+environment.
+
+#### 4. Submit the runs
+
+Once the template and the node description are right -- the probe job has
+finished -- the same command as in step 1 with `--submit` renders every
+`run.slurm` again and queues them:
+
+```sh
+./scripts/benchmark.py --mesh coarse --ncores 128,256,512 \
+                       --workspace /scratch/$USER/occDrivAer --submit
+```
+
+Without `--submit` it prints the `sbatch` command of each run instead. On a
+workstation, run `./Allrun` in each run copy under `<workspace>/runs/`.
+
+#### 5. Harvest the results
 
 Once the queue is through, `postprocess.py` reads the `logFiles/` and
 `postProcessing/` output back out of the same workspace:
@@ -214,8 +222,40 @@ count. `./scripts/case_manifest.py` writes the manifest when `CASE_REF` moves.
 
 `--format yaml` (the default) writes the fuller document, including the force
 coefficient history, and `--format both` writes the two. The JSON is the one
-this repository ingests; check it with `./scripts/validate_submission.py` and
-open the pull request.
+this repository ingests.
+
+#### 6. Validate and submit
+
+`validate_submission.py` checks the JSON against the schema of the dataset,
+the same check the pull request runs:
+
+```sh
+./scripts/validate_submission.py submissions/<YYYYMMDD>_<suffix>
+```
+
+Then open a pull request with the submission folder, as
+[Contributing results](#contributing-results) describes.
+
+### Options of benchmark.py
+
+The options worth knowing about:
+
+| Option | What it does | Default |
+| --- | --- | --- |
+| `--mesh coarse,medium` | Restricts the sweep to some of the resolutions. `all` names them all. | all three -- `coarse,medium,fine` |
+| `--workspace PATH` | Where the case, the meshes and the run copies live. | `workspace/` under the current directory |
+| `--case DIR` | Copies the runs from a case of your own instead of the upstream one. | the script's own directory when that is a case, otherwise the upstream case |
+| `--polymesh DIR` | Copies an existing `polyMesh` directory into the workspace instead of downloading the mesh. Needs `--mesh` to name its single resolution, which the cell count in its `owner` header is checked against. | the Zenodo mesh |
+| `--download-case` | Forces the upstream case even when the script sits in a case checkout. | off |
+| `--slurm-template FILE` | Supplies your site's sbatch directives from a file of your own. | `<workspace>/slurm.template`, written from the built-in default on first use |
+| `--probe-node` | Only detects the topology of the machine it runs on, writes it to `<workspace>/node-topology.yaml`, replacing what is there, and writes `<workspace>/probe.slurm`, a job that does the same on a compute node. | off -- `node-topology.yaml` is detected once, on first use |
+| `--ntasks-per-node N` | Sets the ranks per node the node count is derived from. | `cores_per_node` from `node-topology.yaml` |
+| `--nnodes 1,2,4 --ncores-per-node 128` | Specifies the sweep by node count instead of by core count. | unset -- the sweep comes from `--ncores` |
+| `--decomposition NAME` | Picks the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet minimising interface area against the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
+| `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps MPI rank placement inside a node, over the domains `node-topology.yaml` describes. | no placement sweep; `--bind-object numa` |
+| `--end-time N` | Shortens the runs for a placement or tuning sweep. A challenge result needs the stock 4000 iterations. | the case's own `endTime`, 4000 upstream |
+
+`./scripts/benchmark.py --help` lists the rest.
 
 ## Contributing results
 
