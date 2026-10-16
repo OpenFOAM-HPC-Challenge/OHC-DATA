@@ -34,7 +34,9 @@ CASE_DEFINITION = os.path.join("system", "include", "caseDefinition")
 
 # Upstream home of the case itself, in the OpenFOAM HPC committee repository.
 CASE_PROJECT_URL = "https://develop.openfoam.com/committees/hpc"
-CASE_REF = "develop"
+# Pinned to a commit: a Hardware Track run uses this case unchanged, which
+# postprocess.py checks against data/case-manifest.json, written from it.
+CASE_REF = "84c262431117f5c921db8335e368a12d0e9fa3f0"
 CASE_PATH = "incompressible/simpleFoam/occDrivAerStaticMesh"
 CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_REF, CASE_PATH)
 
