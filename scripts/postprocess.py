@@ -70,6 +70,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (CASE_DEFINITION, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
                     MESH_CELLS, MESHES, add_shared_arguments, display_path,
                     parse_run_dirname, read_text, sanitize)
+import case_manifest
 import topology
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1107,6 +1108,78 @@ def repo_submissions_dir():
     return None
 
 
+# The decompositions the Hardware Track allows, and the optimization category
+# of the others as data/data.json names them.
+HARDWARE_TRACK, SOFTWARE_TRACK = "Hardware Track", "Software Track"
+HARDWARE_DECOMPOSITIONS = ("hierarchical-doubling", "hierarchical-optimal")
+DECOMPOSITION_CATEGORIES = {"scotch": "Decomposer",
+                            "multilevel-scotch": "Multilevel",
+                            "multilevel-metis": "Multilevel",
+                            "multilevel-kahip": "Multilevel"}
+
+
+def check_track(args, meta, runs_dir):
+    """The track and optimization category of this harvest, as printed.
+
+    The Hardware Track is the stock case, as data/case-manifest.json pins it,
+    with a hierarchical decomposition.  Runs that deviate from either make the
+    harvest a Software Track one, whatever meta.yaml declares, and what
+    differs from the manifest is printed.  A declared Software Track stays: a
+    modified OpenFOAM does not show in the case.
+    """
+    declared = meta.get("track", HARDWARE_TRACK)
+    category = meta.get("software_optimization_category", "Other")
+    reasons = []
+    if args.decomposition not in HARDWARE_DECOMPOSITIONS:
+        reasons.append("%s decomposition" % args.decomposition)
+        if category == "Other":
+            category = DECOMPOSITION_CATEGORIES.get(args.decomposition,
+                                                    category)
+
+    manifest = case_manifest.load()
+    if manifest is None:
+        print("case:      not checked -- no %s in this checkout"
+              % os.path.relpath(case_manifest.MANIFEST, REPO))
+    else:
+        # The runs of a sweep mostly share their changes, so each is printed
+        # once, with the runs it was found in.
+        changes = {}
+        for mesh in args.mesh:
+            mesh_dir = os.path.join(runs_dir, mesh)
+            if not os.path.isdir(mesh_dir):
+                continue
+            for entry in sorted(os.listdir(mesh_dir)):
+                run_dir = os.path.join(mesh_dir, entry)
+                if parse_run_dirname(entry, args.decomposition) is None \
+                        or not os.path.isdir(run_dir):
+                    continue
+                for rel, kind, diff in case_manifest.compare(run_dir,
+                                                             manifest):
+                    changes.setdefault((rel, kind, tuple(diff)), []).append(
+                        "%s/%s" % (mesh, entry))
+        ref = manifest["case_ref"][:8]
+        if changes:
+            reasons.append("case differs from upstream %s" % ref)
+            print("case:      differs from the upstream case at %s "
+                  "(%s) in %d file(s):"
+                  % (ref, os.path.relpath(case_manifest.MANIFEST, REPO),
+                     len({rel for rel, _, _ in changes})))
+            for (rel, kind, diff), runs in sorted(changes.items()):
+                print("  %s %s -- %s" % (kind, rel, ", ".join(runs)))
+                for line in diff:
+                    print("      %s" % line)
+        else:
+            print("case:      as upstream at %s" % ref)
+
+    track = SOFTWARE_TRACK if reasons or declared == SOFTWARE_TRACK \
+        else HARDWARE_TRACK
+    print("track:     %s, %s%s%s\n"
+          % (track, category,
+             " -- %s" % "; ".join(reasons) if reasons else "",
+             " (meta.yaml: %s)" % declared if track != declared else ""))
+    return track, category
+
+
 def other_decompositions(mesh_dir, decomposition):
     """[(name, run directories)] of the decompositions other than
     `decomposition` that `mesh_dir` holds runs of."""
@@ -1161,6 +1234,8 @@ def postprocess(args, workspace):
     if missing:
         print("  ! %s still has placeholder values: %s"
               % (meta_path, ", ".join(missing)))
+    meta["track"], meta["software_optimization_category"] = check_track(
+        args, meta, runs_dir)
 
     # Results are grouped per harvest and, inside it, per machine:
     #
@@ -1249,7 +1324,10 @@ def postprocess(args, workspace):
             # The hardware behind the numbers belongs next to them: one
             # meta.yaml per folder, whichever meshes end up in it -- per
             # machine, or per run when --run split the machine further.
-            updates = {"legend_suffix": suffix, "machine": machine or "-"}
+            updates = {"legend_suffix": suffix, "machine": machine or "-",
+                       "track": meta["track"],
+                       "software_optimization_category":
+                           meta["software_optimization_category"]}
             if run_name:
                 updates["run"] = run_name
             meta_yaml = write_meta_yaml(
