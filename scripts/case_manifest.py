@@ -168,7 +168,11 @@ def build(case_dir, ref=CASE_REF):
 def selected_fvsolution(allrun_text):
     """The fvSolution variant an Allrun copies into place, or None."""
     m = re.search(r"(?m)^\s*fvSolution=(\S+)", allrun_text)
-    return m.group(1) if m else None
+    value = m.group(1) if m else None
+    if value and len(value) >= 2 and value[0] in "'\"" \
+            and value[-1] == value[0]:
+        value = value[1:-1]
+    return value
 
 
 def load(path=MANIFEST):
