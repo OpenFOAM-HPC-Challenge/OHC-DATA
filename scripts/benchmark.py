@@ -1158,7 +1158,10 @@ def main(argv=None):
                     f.write(allrun)
             link_polymesh(run_dir, polymesh)
             set_decomposition(run_dir, ncores, triplet)
-            if args.decomposition == "scotch":
+            # Set the method in either case: a --case may hold another one.
+            if hierarchical:
+                set_method(run_dir, "hierarchical")
+            elif args.decomposition == "scotch":
                 set_method(run_dir, "scotch")
             if plugin_spec:
                 decompositionPlugin.apply(run_dir, plugin_spec)
