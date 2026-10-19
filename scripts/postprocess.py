@@ -1196,7 +1196,8 @@ def check_track(args, meta, runs_dir):
             for entry in sorted(os.listdir(mesh_dir)):
                 run_dir = os.path.join(mesh_dir, entry)
                 if parse_run_dirname(entry, args.decomposition) is None \
-                        or not os.path.isdir(run_dir):
+                        or not os.path.isdir(run_dir) \
+                        or find_solver_log(run_dir) is None:
                     continue
                 for rel, kind, diff in case_manifest.compare(run_dir,
                                                              manifest):
