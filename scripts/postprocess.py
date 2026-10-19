@@ -1181,6 +1181,35 @@ def check_track(args, meta, runs_dir):
             category = DECOMPOSITION_CATEGORIES.get(args.decomposition,
                                                     category)
 
+    # The runs checked are the ones harvested: those with a solver log.
+    runs = []
+    for mesh in args.mesh:
+        mesh_dir = os.path.join(runs_dir, mesh)
+        if not os.path.isdir(mesh_dir):
+            continue
+        for entry in sorted(os.listdir(mesh_dir)):
+            run_dir = os.path.join(mesh_dir, entry)
+            if parse_run_dirname(entry, args.decomposition) is not None \
+                    and os.path.isdir(run_dir) \
+                    and find_solver_log(run_dir) is not None:
+                runs.append(("%s/%s" % (mesh, entry), run_dir))
+
+    # The directory name only tells the decomposition benchmark.py prepared;
+    # a run copy edited by hand, or made from a --case set to another method,
+    # holds a different one, which the manifest masks.
+    if args.decomposition in HARDWARE_DECOMPOSITIONS:
+        methods = {}
+        for name, run_dir in runs:
+            method = parse_case_definition(run_dir).get(
+                "decomposition_method", "").strip('"')
+            if method != "hierarchical":
+                methods.setdefault(method or "unknown", []).append(name)
+        for method, names in sorted(methods.items()):
+            reasons.append("%s decomposition in %d run(s)"
+                           % (method, len(names)))
+            print("method:    %s, not hierarchical -- %s"
+                  % (method, ", ".join(names)))
+
     manifest = case_manifest.load()
     if manifest is None:
         print("case:      not checked -- no %s in this checkout"
@@ -1189,26 +1218,9 @@ def check_track(args, meta, runs_dir):
         # The runs of a sweep mostly share their changes, so each is printed
         # once, with the runs it was found in.
         changes = {}
-        for mesh in args.mesh:
-            mesh_dir = os.path.join(runs_dir, mesh)
-            if not os.path.isdir(mesh_dir):
-                continue
-            for entry in sorted(os.listdir(mesh_dir)):
-                run_dir = os.path.join(mesh_dir, entry)
-                if parse_run_dirname(entry, args.decomposition) is None \
-                        or not os.path.isdir(run_dir) \
-                        or find_solver_log(run_dir) is None:
-                    continue
-                method = parse_case_definition(run_dir).get(
-                    "decomposition_method", "").strip('"')
-                if (args.decomposition in HARDWARE_DECOMPOSITIONS
-                        and method != "hierarchical"):
-                    reasons.append("%s/%s uses %s decomposition"
-                                   % (mesh, entry, method or "unknown"))
-                for rel, kind, diff in case_manifest.compare(run_dir,
-                                                             manifest):
-                    changes.setdefault((rel, kind, tuple(diff)), []).append(
-                        "%s/%s" % (mesh, entry))
+        for name, run_dir in runs:
+            for rel, kind, diff in case_manifest.compare(run_dir, manifest):
+                changes.setdefault((rel, kind, tuple(diff)), []).append(name)
         ref = manifest["case_ref"][:8]
         counted = {k: v for k, v in changes.items() if k[1] != "noted"}
         noted = {k: v for k, v in changes.items() if k[1] == "noted"}
