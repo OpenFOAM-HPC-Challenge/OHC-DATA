@@ -145,7 +145,7 @@ FIELDS = [
     Field("GPU Memory Bandwidth [GB/s]", "float", OPTIONAL, positive=True,
           unit="GB/s", doc="Theoretical peak per device."),
     Field("Last-Level Cache", "cache", OPTIONAL, default="N/A",
-          doc="Per node, e.g. '256MB' or 'on-package memory'."),
+          doc="Per socket, e.g. '256MB' or 'on-package memory'."),
     Field("Network Interconnect", "str", OPTIONAL, default="N/A"),
     Field("Storage File-System", "str", OPTIONAL, default="N/A"),
     Field("System TDP [W]", "float", REQUIRED, positive=True, unit="W",

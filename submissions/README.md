@@ -322,7 +322,7 @@ May be omitted, `null`, `"N/A"`, `"-"` or `"/"`; the placeholder in the last col
 | `CPU Memory Bandwidth [GB/s]` | float | > 0 Theoretical peak per node. stored as `null` when absent |
 | `GPU Model` | str | Required once Number of GPU Devices is non-zero. stored as `"N/A"` when absent |
 | `GPU Memory Bandwidth [GB/s]` | float | > 0 Theoretical peak per device. stored as `null` when absent |
-| `Last-Level Cache` | cache | Per node, e.g. '256MB' or 'on-package memory'. stored as `"N/A"` when absent |
+| `Last-Level Cache` | cache | Per socket, e.g. '256MB' or 'on-package memory'. stored as `"N/A"` when absent |
 | `Network Interconnect` | str | stored as `"N/A"` when absent |
 | `Storage File-System` | str | stored as `"N/A"` when absent |
 | `Pre-Processing Wall-Clock Time [s]` | number | >= 0 decomposePar + renumberMesh + potentialFoam + applyBoundaryLayer. stored as `null` when absent |
