@@ -217,6 +217,23 @@ all of them.  A record may override anything `meta` sets:
 One record is one simulation: one mesh, one node/core count, one run.  A
 strong-scaling sweep is several records in one file.
 
+`postprocess.py` also writes a `case` block into the envelope: the case the
+runs were checked against, i.e. the repository and branch it comes from, the
+`commit` it was at and the `digest` of the case at that commit, which is the
+same for commits that leave the case as it is.  Both are `null` when the case
+could not be checked, which makes the harvest Software Track.  The block is
+kept with the file and not appended to `data/data.json`:
+
+```json
+"case": {
+  "source": "https://develop.openfoam.com/committees/hpc",
+  "branch": "develop",
+  "path": "incompressible/simpleFoam/occDrivAerStaticMesh",
+  "commit": "84c262431117f5c921db8335e368a12d0e9fa3f0",
+  "digest": "979be23b9c5b736e01b55acb475f56807ad9a61d410d90d238799814ae5ced87"
+}
+```
+
 ## What is checked
 
 Beyond the per-field types and ranges in the table below:

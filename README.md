@@ -60,7 +60,9 @@ them.
   `node-topology.yaml` by hand.
 - Internet access where `benchmark.py` runs: the case comes from
   develop.openfoam.com and the meshes from Zenodo. `--polymesh` uses a mesh
-  you already have instead.
+  you already have instead. The case is needed even with `--case`, since the
+  runs are checked against it; where `benchmark.py` cannot download it,
+  `postprocess.py` has to.
 - Disk space in the workspace. The mesh downloads are 3.2 GB (coarse), 5.9 GB
   (medium) and 11.5 GB (fine). Extracted, the coarse mesh takes about 7 GB,
   and each coarse run about 11 GB once decomposed; medium and fine scale
@@ -114,9 +116,10 @@ to be in place beforehand:
 ```
 
 This downloads the
-[occDrivAerStaticMesh case](https://develop.openfoam.com/committees/hpc/-/tree/84c262431117f5c921db8335e368a12d0e9fa3f0/incompressible/simpleFoam/occDrivAerStaticMesh)
-from the OpenFOAM HPC committee repository into `<workspace>/case`, at the
-commit pinned by `CASE_REF` in `scripts/common.py`, and the requested polyMesh
+[occDrivAerStaticMesh case](https://develop.openfoam.com/committees/hpc/-/tree/develop/incompressible/simpleFoam/occDrivAerStaticMesh)
+from the develop branch of the OpenFOAM HPC committee repository into
+`<workspace>/case`, records it in `<workspace>/case-manifest.json` together
+with the commit it was at, and downloads the requested polyMesh
 resolutions from Zenodo (coarse, medium and fine, unless `--mesh` selects
 fewer). It then builds one case copy per mesh and core count, with the mesh
 symlinked to the shared copy, writes the hierarchical decomposition into each
@@ -125,11 +128,15 @@ It also writes the SLURM template (step 2) and the description of the machine
 it runs on (step 3); while either of them is new, it submits nothing.
 
 Both downloads happen once and are reused, so a second invocation against the
-same workspace downloads nothing. A mesh you already have can be copied into
-the workspace instead: `--polymesh DIR` gives its `polyMesh` directory, and
-`--mesh` the one resolution it is. If you put the scripts into a case checkout
-of your own, that case is used instead of the upstream one, so your local
-modifications are kept.
+same workspace downloads nothing, and the workspace stays with the commit it
+was set up with. To take up a newer case from develop, delete
+`<workspace>/case` and `<workspace>/case-manifest.json`. A mesh you already
+have can be copied into the workspace instead: `--polymesh DIR` gives its
+`polyMesh` directory, and `--mesh` the one resolution it is. If you put the
+scripts into a case checkout of your own, or give one with `--case DIR`, the
+runs are copied from that case instead, so your local modifications are kept.
+The manifest is still the case on develop: what your case changes makes the
+runs Software Track (step 5).
 
 #### 2. Adapt the SLURM template
 
@@ -141,7 +148,8 @@ and the environment that loads OpenFOAM. Each invocation renders every
 command again.
 
 The runs launch their parallel steps with `srun -n`, which the template
-exports as `MPI_LAUNCHER`. The `--ranks-per-domain` runs keep `mpirun -np`,
+exports as `MPI_LAUNCHER`; the case's `Allrun` takes it and `OMPI_FLAGS` from
+the environment. The `--ranks-per-domain` runs keep `mpirun -np`,
 because their placement flags are Open MPI options.
 
 #### 3. Describe a compute node
@@ -221,17 +229,21 @@ are harvested; `--decomposition scotch` (or any other name `benchmark.py`
 accepted) harvests that decomposition's run directories instead and writes
 them to a folder of their own, so the submissions do not overwrite each other.
 
-The track follows from what was run. A Hardware Track result uses the stock
-case with a hierarchical decomposition, so every run copy is compared with
-`data/case-manifest.json`, which records the case at the pinned commit. A
-harvest whose decomposition is not hierarchical, or whose case differs, is
-written as Software Track, and the differences are printed file by file.
+The track follows from what was run. A Hardware Track result uses the case
+on develop, unchanged, with a hierarchical decomposition, so every run copy is
+compared with `<workspace>/case-manifest.json`, which records the case as it
+was downloaded. A harvest whose decomposition is not hierarchical, or whose
+case differs, is written as Software Track, and the differences are printed
+file by file. So is a harvest whose case cannot be checked: when the workspace
+has no manifest yet and develop.openfoam.com cannot be reached, run
+`postprocess.py` again where it can be. The submission records the commit the
+runs were checked against and a digest of the case at that commit, which
+stays the same across commits that leave the case as it is.
 Comments, layout and the settings `benchmark.py` writes into a run copy do not
 count as differences, and neither does `controlDict.withWrite`, which the case
 allows for benchmarking the I/O as well. Changes to `Allrun` that adapt it to
 your site are printed as notes and do not count either, as long as `Allrun`
 still selects `fvSolution.fixedIter`, the setup the Hardware Track requires.
-`./scripts/case_manifest.py` writes the manifest when `CASE_REF` changes.
 
 `--format yaml` (the default) writes the fuller document, including the force
 coefficient history, and `--format both` writes the two. This repository
