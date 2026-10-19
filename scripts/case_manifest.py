@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
 """The reference the run copies of the case are checked against.
 
-``data/case-manifest.json`` pins the upstream occDrivAer case at ``CASE_REF``
-(common.py): for every file that defines the simulation -- ``Allrun``,
-``0.orig/``, ``system/`` and ``constant/`` without the mesh -- it keeps the
-text and a digest of what OpenFOAM or bash reads in it.  A Hardware Track run
-has to use that case unchanged, so postprocess.py compares every run copy with
-the manifest and prints what differs.
+The case is the upstream occDrivAer case on the develop branch of the
+OpenFOAM HPC committee repository.  ``<workspace>/case-manifest.json``
+records it as it was downloaded into the workspace: the commit the archive
+was made from and, for every file that defines the simulation -- ``Allrun``,
+``0.orig/``, ``system/`` and ``constant/`` without the mesh -- the text and a
+digest of what OpenFOAM or bash reads in it.  A Hardware Track run has to use
+that case unchanged, so postprocess.py compares every run copy with the
+manifest and prints what differs.
+
+The manifest is written once per workspace, from the downloaded archive
+rather than the extracted case, so editing the case after the download does
+not change it.  It is always the upstream case: runs copied from a case of
+your own (``benchmark.py --case``) are checked against develop as well.
 
 The digest ignores comments and layout, so reformatting a file or commenting
 on it is no change, while every keyword, value or ``#include`` is.  Not a
 change either is what benchmark.py itself writes into a run copy: nCores,
 decompositionMethod and nHierarchical in caseDefinition, the multiLevelCoeffs
-of decomposeParDict, endTime (``--end-time``) and the MPI launcher of Allrun.
-Nor is the choice of controlDict.withWrite over controlDict.noWrite, which the
-case allows for benchmarking the I/O as well.
+of decomposeParDict, endTime (``--end-time``) and the MPI launcher of an
+Allrun that does not take it from the environment yet.  Nor is the choice of
+controlDict.withWrite over controlDict.noWrite, which the case allows for
+benchmarking the I/O as well.
 
 Allrun is adapted to the environment it runs in -- scheduler, OpenFOAM
 installation, MPI -- so its other differences are reported as notes; only the
 fvSolution variant it selects is a change of the case.
 
-Maintainers write the manifest from the pinned case, which is downloaded
-unless a checkout of it is given::
+postprocess.py writes the manifest when benchmark.py has not; so does::
 
-    ./case_manifest.py [CASE_DIR]
+    ./case_manifest.py --workspace PATH
 
 Standard library only, like the rest of these scripts.
 """
@@ -35,13 +42,15 @@ import json
 import os
 import re
 import sys
+import tarfile
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import CASE_PATH, CASE_REF                         # noqa: E402
+from common import (CASE_ARCHIVE_URL, CASE_BRANCH, CASE_PATH,  # noqa: E402
+                    CASE_PROJECT_URL, CASE_TARBALL, CASE_WEB_URL)
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MANIFEST = os.path.join(REPO, "data", "case-manifest.json")
+# The manifest's file name in the workspace.
+MANIFEST_NAME = "case-manifest.json"
 
 # What a run copy is compared on: Allrun, and these directories in full but
 # for the mesh and the documentation.
@@ -59,8 +68,10 @@ MASK = "<set by benchmark.py>"
 # The controlDict variants the case allows Allrun to select.
 CONTROL_DICTS = ("controlDict.noWrite", "controlDict.withWrite")
 
-# The launcher lines of Allrun, stock and as allrun_with_launcher() leaves
-# them; either is the stock launch.
+# The launcher lines of Allrun: with mpirun hard-coded, as the case had it
+# at first, and with the launcher from the environment, as the case has it
+# now and allrun_with_launcher() makes of the first; either is the stock
+# launch.
 LAUNCHER_LINES = ('parEx="mpirun -np ${nProcs} ${OMPI_FLAGS}"',
                   'parEx="${MPI_LAUNCHER} ${nProcs} ${OMPI_FLAGS}"')
 
@@ -145,8 +156,8 @@ def digest(lines):
     return hashlib.sha256(" ".join(lines).encode("utf-8")).hexdigest()
 
 
-def build(case_dir, ref=CASE_REF):
-    """The manifest of the case in `case_dir`."""
+def build(case_dir, ref):
+    """The manifest of the case in `case_dir`, the upstream one at `ref`."""
     files = {}
     for rel in case_files(case_dir):
         text = read(os.path.join(case_dir, rel.replace("/", os.sep)))
@@ -162,7 +173,8 @@ def build(case_dir, ref=CASE_REF):
                     and "system/" + v in files]
         if variants and "system/" + name in files:
             files["system/" + name]["variants"] = variants
-    return {"case_path": CASE_PATH, "case_ref": ref, "files": files}
+    return {"source": CASE_PROJECT_URL, "branch": CASE_BRANCH,
+            "case_path": CASE_PATH, "case_ref": ref, "files": files}
 
 
 def selected_fvsolution(allrun_text):
@@ -175,13 +187,81 @@ def selected_fvsolution(allrun_text):
     return value
 
 
-def load(path=MANIFEST):
-    """The manifest, or None outside a checkout that has one."""
+def case_digest(manifest):
+    """One digest of the whole case: of its files' digests, by path."""
+    return digest(["%s:%s" % (rel, entry["digest"])
+                   for rel, entry in sorted(manifest["files"].items())])
+
+
+def archive_commit(tarball):
+    """The commit `tarball` was made from, or None.
+
+    git archive, which GitLab serves archives with, stores it in the pax
+    header, also when the archive was asked for by branch name.
+    """
+    with tarfile.open(tarball, "r:gz") as tar:
+        commit = tar.pax_headers.get("comment", "")
+    return commit if re.match(r"[0-9a-f]{40}$", commit) else None
+
+
+def from_archive(tarball):
+    """The manifest of the case in `tarball`, or None when the archive does
+    not name the commit it was made from."""
+    import benchmark
+    commit = archive_commit(tarball)
+    if commit is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        case_dir = benchmark.extract(tarball, tmp, locate=benchmark.find_case,
+                                     what="case")
+        return build(case_dir, commit)
+
+
+def manifest_path(workspace):
+    return os.path.join(workspace, MANIFEST_NAME)
+
+
+def load(path):
+    """The manifest at `path`, or None when there is none."""
     try:
         with open(path) as f:
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def reference(workspace):
+    """The manifest the runs of `workspace` are checked against, or None.
+
+    Written on first use from the case archive in the workspace -- the one
+    benchmark.py extracts the case from, downloaded here when the runs were
+    copied from a case of your own -- and kept, so a workspace stays checked
+    against the commit it was set up with.  None, with the reason printed,
+    when develop cannot be reached.
+    """
+    import benchmark
+    path = manifest_path(workspace)
+    manifest = load(path)
+    if manifest is not None:
+        return manifest
+
+    tarball = os.path.join(workspace, CASE_TARBALL)
+    os.makedirs(os.path.dirname(tarball), exist_ok=True)
+    try:
+        benchmark.download(CASE_ARCHIVE_URL, tarball)
+    except OSError as exc:
+        print("warning: cannot download the case from %s: %s"
+              % (CASE_WEB_URL, exc), file=sys.stderr)
+        return None
+    manifest = from_archive(tarball)
+    if manifest is None:
+        print("warning: %s names no commit, so it is not the archive of "
+              "%s" % (tarball, CASE_WEB_URL), file=sys.stderr)
+        return None
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=1, sort_keys=True)
+        f.write("\n")
+    return manifest
 
 
 def compare(run_dir, manifest):
@@ -221,25 +301,20 @@ def compare(run_dir, manifest):
 
 def main(argv=None):
     p = argparse.ArgumentParser(
-        description="Write data/case-manifest.json from the pinned case.")
-    p.add_argument("case_dir", nargs="?",
-                   help="a checkout of the case at %s (default: download it)"
-                        % CASE_REF)
-    p.add_argument("-o", "--output", default=MANIFEST,
-                   help="where to write it (default: %(default)s)")
+        description="Write the manifest of the upstream case into a "
+                    "workspace, downloading the case if it is not there.")
+    p.add_argument("--workspace", default=os.path.join(os.getcwd(),
+                                                       "workspace"),
+                   metavar="PATH",
+                   help="the benchmark.py workspace (default: ./workspace)")
     args = p.parse_args(argv)
 
-    if args.case_dir:
-        manifest = build(args.case_dir)
-    else:
-        import benchmark
-        with tempfile.TemporaryDirectory() as tmp:
-            manifest = build(benchmark.prepare_case(tmp))
-    with open(args.output, "w") as f:
-        json.dump(manifest, f, indent=1, sort_keys=True)
-        f.write("\n")
-    print("wrote %s: %d file(s) of %s at %s"
-          % (args.output, len(manifest["files"]), CASE_PATH, CASE_REF))
+    manifest = reference(args.workspace)
+    if manifest is None:
+        sys.exit("error: no manifest written")
+    print("%s: %d file(s) of %s at %s"
+          % (manifest_path(args.workspace), len(manifest["files"]),
+             CASE_PATH, manifest["case_ref"]))
 
 
 if __name__ == "__main__":

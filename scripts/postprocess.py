@@ -67,9 +67,11 @@ import socket
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_DEFINITION, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
-                    MESH_CELLS, MESHES, add_shared_arguments, display_path,
-                    parse_run_dirname, read_text, sanitize)
+from common import (CASE_BRANCH, CASE_DEFINITION, CASE_PATH,
+                    CASE_PROJECT_URL, CASE_WEB_URL, DECOMPOSITIONS,
+                    DEFAULT_DECOMPOSITION, MESH_CELLS, MESHES,
+                    add_shared_arguments, display_path, parse_run_dirname,
+                    read_text, sanitize)
 import case_manifest
 import topology
 
@@ -1162,16 +1164,23 @@ DECOMPOSITION_CATEGORIES = {"scotch": "Decomposer",
                             "multilevel-kahip": "Multilevel"}
 
 
-def check_track(args, meta, runs_dir):
-    """The track and optimization category of this harvest, as printed.
+def check_track(args, meta, workspace):
+    """The track, optimization category and case of this harvest, as printed.
 
-    The Hardware Track is the stock case, as data/case-manifest.json pins it,
-    with a hierarchical decomposition.  Runs that deviate from either make the
-    harvest a Software Track one, whatever meta.yaml declares, and what
-    differs from the manifest is printed.  Edits of Allrun that keep its
-    fvSolution variant are printed as notes and do not count.  A declared
-    Software Track stays: a modified OpenFOAM does not show in the case.
+    The Hardware Track is the upstream case on develop, as the workspace's
+    case-manifest.json records it, with a hierarchical decomposition.  Runs
+    that deviate from either make the harvest a Software Track one, whatever
+    meta.yaml declares, and what differs from the manifest is printed.  So
+    does a case that cannot be checked, because develop cannot be reached to
+    write the manifest.  Edits of Allrun that keep its fvSolution variant are
+    printed as notes and do not count.  A declared Software Track stays: a
+    modified OpenFOAM does not show in the case.
+
+    The case is what the submission records of it: where it comes from, the
+    commit the runs were checked against and the digest of the case at that
+    commit, which is the same for commits that leave the case as it is.
     """
+    runs_dir = os.path.join(workspace, "runs")
     declared = meta.get("track", HARDWARE_TRACK)
     category = meta.get("software_optimization_category", "Other")
     reasons = []
@@ -1210,28 +1219,33 @@ def check_track(args, meta, runs_dir):
             print("method:    %s, not hierarchical -- %s"
                   % (method, ", ".join(names)))
 
-    manifest = case_manifest.load()
+    case = {"source": CASE_PROJECT_URL, "branch": CASE_BRANCH,
+            "path": CASE_PATH, "commit": None, "digest": None}
+    manifest = case_manifest.reference(workspace)
     if manifest is None:
-        print("case:      not checked -- no %s in this checkout"
-              % os.path.relpath(case_manifest.MANIFEST, REPO))
+        reasons.append("case not checked against %s" % CASE_BRANCH)
+        print("case:      not checked -- %s cannot be reached; run "
+              "postprocess.py again where it can" % CASE_WEB_URL)
     else:
+        case["commit"] = manifest["case_ref"]
+        case["digest"] = case_manifest.case_digest(manifest)
         # The runs of a sweep mostly share their changes, so each is printed
         # once, with the runs it was found in.
         changes = {}
         for name, run_dir in runs:
             for rel, kind, diff in case_manifest.compare(run_dir, manifest):
                 changes.setdefault((rel, kind, tuple(diff)), []).append(name)
-        ref = manifest["case_ref"][:8]
+        ref = "%s at %s" % (CASE_BRANCH, manifest["case_ref"][:8])
         counted = {k: v for k, v in changes.items() if k[1] != "noted"}
         noted = {k: v for k, v in changes.items() if k[1] == "noted"}
         if counted:
-            reasons.append("case differs from upstream %s" % ref)
-            print("case:      differs from the upstream case at %s "
-                  "(%s) in %d file(s):"
-                  % (ref, os.path.relpath(case_manifest.MANIFEST, REPO),
+            reasons.append("case differs from %s" % ref)
+            print("case:      differs from %s (%s) in %d file(s):"
+                  % (ref, display_path(case_manifest.manifest_path(workspace),
+                                       workspace),
                      len({rel for rel, _, _ in counted})))
         else:
-            print("case:      as upstream at %s" % ref)
+            print("case:      as %s" % ref)
         for (rel, kind, diff), runs in sorted(counted.items()):
             print("  %s %s -- %s" % (kind, rel, ", ".join(runs)))
             for line in diff:
@@ -1250,7 +1264,7 @@ def check_track(args, meta, runs_dir):
           % (track, category,
              " -- %s" % "; ".join(reasons) if reasons else "",
              " (meta.yaml: %s)" % declared if track != declared else ""))
-    return track, category
+    return track, category, case
 
 
 def other_decompositions(mesh_dir, decomposition):
@@ -1307,8 +1321,8 @@ def postprocess(args, workspace):
     if missing:
         print("  ! %s still has placeholder values: %s"
               % (meta_path, ", ".join(missing)))
-    meta["track"], meta["software_optimization_category"] = check_track(
-        args, meta, runs_dir)
+    meta["track"], meta["software_optimization_category"], case = \
+        check_track(args, meta, workspace)
 
     # Results are grouped per harvest and, inside it, per machine:
     #
@@ -1407,11 +1421,13 @@ def postprocess(args, workspace):
                 os.path.join(outdir, "meta.yaml"), meta_path, updates)
             print("  -> %s" % display_path(meta_yaml, workspace))
         if args.submission_format in ("json", "both"):
-            path = write_json_submission(outdir, mesh, meta, runs, machine)
+            path = write_json_submission(outdir, mesh, meta, runs, case,
+                                         machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         if args.submission_format in ("yaml", "both"):
-            path = write_submission(outdir, mesh, meta, runs, args, machine)
+            path = write_submission(outdir, mesh, meta, runs, case, args,
+                                    machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         print("")
@@ -1482,14 +1498,15 @@ def submission_name(meta, mesh, machine, extension):
     return "_".join(parts) + extension
 
 
-def write_json_submission(outdir, mesh, meta, runs, machine=""):
+def write_json_submission(outdir, mesh, meta, runs, case, machine=""):
     """Emit one mesh as the flat JSON the OHC-DATA repository ingests.
 
     This is the same sweep as write_submission(), reduced to the columns of
     data/data.json: one object per simulation, with everything the runs share
     hoisted into `meta`.  The OHC-DATA workflow validates the file on the pull
     request and appends the records once it is merged; see that repository's
-    submissions/README.md for the schema.
+    submissions/README.md for the schema.  `case` names the case the runs
+    were checked against, as check_track() returns it.
     """
     name = submission_name(meta, mesh, machine, ".json")
 
@@ -1498,6 +1515,7 @@ def write_json_submission(outdir, mesh, meta, runs, machine=""):
         "schema": "ohc-submission/v1",
         "generated_by": "postprocess.py --format json",
         "generated_on": datetime.date.today().isoformat(),
+        "case": case,
         "meta": {
             "Contributor ID": str(meta.get("participant_id", "N/A")),
             "Contributor Affiliation": meta.get("affiliation", "N/A"),
@@ -1560,7 +1578,7 @@ def write_json_submission(outdir, mesh, meta, runs, machine=""):
     return path
 
 
-def write_submission(outdir, mesh, meta, runs, args, machine=""):
+def write_submission(outdir, mesh, meta, runs, case, args, machine=""):
     """Emit one YAML submission file covering every run of a single mesh."""
     _, label = MESHES[mesh]
 
@@ -1568,6 +1586,7 @@ def write_submission(outdir, mesh, meta, runs, args, machine=""):
         "schema": "ohc1-submission/v1",
         "generated_by": "postprocess.py",
         "generated_on": datetime.date.today().isoformat(),
+        "case": case,
         "meta": {
             "test_case": meta.get("test_case", "Test case 2a"),
             "track": meta.get("track", "Hardware Track"),

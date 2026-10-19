@@ -33,19 +33,23 @@ CASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CASE_DEFINITION = os.path.join("system", "include", "caseDefinition")
 
 # Upstream home of the case itself, in the OpenFOAM HPC committee repository.
+# The case is always taken from its develop branch: a Hardware Track run uses
+# that case unchanged.  The archive names the commit it was made from, which
+# case_manifest.py records with the manifest the runs are checked against.
 CASE_PROJECT_URL = "https://develop.openfoam.com/committees/hpc"
-# Pinned to a commit: a Hardware Track run uses this case unchanged, which
-# postprocess.py checks against data/case-manifest.json, written from it.
-CASE_REF = "84c262431117f5c921db8335e368a12d0e9fa3f0"
+CASE_BRANCH = "develop"
 CASE_PATH = "incompressible/simpleFoam/occDrivAerStaticMesh"
-CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_REF, CASE_PATH)
+CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_BRANCH, CASE_PATH)
 
 # GitLab serves any subdirectory of a repository as its own tarball, so the
 # case comes down in one request and without a git client.  The archive still
 # carries the full path inside it, hence find_case() rather than a fixed
 # strip-components count.
 CASE_ARCHIVE_URL = ("%s/-/archive/%s/hpc-%s.tar.gz?path=%s"
-                    % (CASE_PROJECT_URL, CASE_REF, CASE_REF, CASE_PATH))
+                    % (CASE_PROJECT_URL, CASE_BRANCH, CASE_BRANCH, CASE_PATH))
+# Where the downloaded archive is kept, relative to the workspace: it is what
+# the runs are checked against, so it stays after the case is extracted.
+CASE_TARBALL = os.path.join("case", "occDrivAerStaticMesh.tar.gz")
 
 
 def is_case(path):

@@ -7,7 +7,10 @@ Challenge occDrivAer case.  It
 
   0. obtains the case itself -- the directory this script sits in when that
      is already a case, otherwise the upstream one, downloaded from the
-     OpenFOAM HPC committee repository into ``<workspace>/case/``,
+     develop branch of the OpenFOAM HPC committee repository into
+     ``<workspace>/case/`` -- and records the upstream case in
+     ``<workspace>/case-manifest.json``, which postprocess.py checks the runs
+     against (see case_manifest.py),
   1. downloads and extracts the requested polyMesh resolution(s)
      (fine / medium / coarse) from Zenodo -- by default all three -- or
      copies in the existing mesh ``--polymesh`` names instead,
@@ -62,11 +65,13 @@ import tarfile
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
-                    CASE_WEB_URL, DECOMPOSITIONS, DEFAULT_DECOMPOSITION,
+from common import (CASE_ARCHIVE_URL, CASE_BRANCH, CASE_DEFINITION, CASE_DIR,
+                    CASE_TARBALL, CASE_WEB_URL, DECOMPOSITIONS,
+                    DEFAULT_DECOMPOSITION,
                     MESH_CELLS, MESHES, ZENODO_URL, add_shared_arguments,
                     check_method_available, run_dirname,
                     display_path, is_case, parse_posint_list, parse_start)
+import case_manifest
 import topology
 
 # Optional: decomposition methods that need more than a coefficient triplet
@@ -427,7 +432,7 @@ def prepare_case(workspace):
         return existing
 
     print("[case] %s" % CASE_WEB_URL)
-    tarball = os.path.join(case_root, "occDrivAerStaticMesh.tar.gz")
+    tarball = os.path.join(workspace, CASE_TARBALL)
     download(CASE_ARCHIVE_URL, tarball)
     return extract(tarball, case_root, locate=find_case, what="case")
 
@@ -469,11 +474,12 @@ def _ignore(dirpath, names):
 def allrun_with_launcher(text):
     """`text` of an Allrun whose MPI launcher and flags the environment sets.
 
-    The stock Allrun hard-codes ``mpirun -np`` and resets OMPI_FLAGS, so
-    neither a site without mpirun nor the placement flags run.slurm exports
-    get through.  Both become overridable, MPI_LAUNCHER and OMPI_FLAGS, with
-    the stock values as defaults.  Returns `text` itself when it is patched
-    already, and None when it lacks the stock lines.
+    The upstream Allrun takes both from the environment, MPI_LAUNCHER and
+    OMPI_FLAGS, so it is returned as it is.  An older one hard-codes
+    ``mpirun -np`` and resets OMPI_FLAGS, so neither a site without mpirun
+    nor the placement flags run.slurm exports would get through: both become
+    overridable, with those values as defaults.  None when `text` has
+    neither form.
     """
     if "MPI_LAUNCHER" in text:
         return text
@@ -1099,9 +1105,20 @@ def main(argv=None):
         with open(os.path.join(case_dir, "Allrun")) as f:
             allrun = allrun_with_launcher(f.read())
     if allrun is None:
-        print("warning: the case's Allrun has no stock mpirun/OMPI_FLAGS "
-              "lines; MPI_LAUNCHER and OMPI_FLAGS from run.slurm will not "
-              "reach it", file=sys.stderr)
+        print("warning: the case's Allrun neither reads MPI_LAUNCHER nor "
+              "has the mpirun/OMPI_FLAGS lines of the upstream one; "
+              "MPI_LAUNCHER and OMPI_FLAGS from run.slurm will not reach it",
+              file=sys.stderr)
+    manifest = case_manifest.reference(workspace)
+    if manifest is None:
+        print("warning: the runs cannot be checked against %s yet; "
+              "postprocess.py tries again, and harvests them as Software "
+              "Track until it can" % CASE_WEB_URL, file=sys.stderr)
+    else:
+        print("reference: %s at %s (%s)"
+              % (CASE_BRANCH, manifest["case_ref"][:8],
+                 display_path(case_manifest.manifest_path(workspace),
+                              workspace)))
     print()
 
     use_plugin = (decompositionPlugin
