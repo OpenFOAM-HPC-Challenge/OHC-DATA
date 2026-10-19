@@ -1199,6 +1199,12 @@ def check_track(args, meta, runs_dir):
                         or not os.path.isdir(run_dir) \
                         or find_solver_log(run_dir) is None:
                     continue
+                method = parse_case_definition(run_dir).get(
+                    "decomposition_method", "").strip('"')
+                if (args.decomposition in HARDWARE_DECOMPOSITIONS
+                        and method != "hierarchical"):
+                    reasons.append("%s/%s uses %s decomposition"
+                                   % (mesh, entry, method or "unknown"))
                 for rel, kind, diff in case_manifest.compare(run_dir,
                                                              manifest):
                     changes.setdefault((rel, kind, tuple(diff)), []).append(
