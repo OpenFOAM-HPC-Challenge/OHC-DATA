@@ -70,7 +70,8 @@ from common import (CASE_ARCHIVE_URL, CASE_BRANCH, CASE_DEFINITION, CASE_DIR,
                     DEFAULT_DECOMPOSITION,
                     MESH_CELLS, MESHES, ZENODO_URL, add_shared_arguments,
                     check_method_available, run_dirname,
-                    display_path, is_case, parse_posint_list, parse_start)
+                    display_path, is_case, parse_posint_list, parse_start,
+                    read_text)
 import case_manifest
 import topology
 
@@ -604,6 +605,36 @@ def set_end_time(run_dir, end_time):
     return patched
 
 
+# The switch of the wallClockTimeStatistics function object that ends the
+# run once the time per time step is known within its error.
+STOP_WHEN_ACCURATE = re.compile(r"(?m)^(\s*stopWhenAccurate\s+)\w+;")
+
+
+def has_stop_when_accurate(case_dir):
+    """Whether the case's function object has the stopWhenAccurate switch."""
+    path = os.path.join(case_dir, "system", "FOwallClockTimeStatistics")
+    return bool(STOP_WHEN_ACCURATE.search(read_text(path) or ""))
+
+
+def set_stop_when_accurate(run_dir):
+    """Switch on stopWhenAccurate of the wallClockTimeStatistics function
+    object in one run copy.
+
+    The run then ends as soon as the mean wall-clock time per time step is
+    known within the function object's error, but not before its minTimeSteps
+    measured time steps; such a run is partial.
+    """
+    path = os.path.join(run_dir, "system", "FOwallClockTimeStatistics")
+    with open(path) as f:
+        text = f.read()
+    text, count = STOP_WHEN_ACCURATE.subn(r"\g<1>true;", text)
+    if count != 1:
+        raise RuntimeError("could not set stopWhenAccurate in %s (%d matches)"
+                           % (path, count))
+    with open(path, "w") as f:
+        f.write(text)
+
+
 def workspace_template(workspace):
     """The workspace's SLURM template as (path, fresh).
 
@@ -800,6 +831,13 @@ def build_parser():
                    help="override endTime (iteration count) in the run copies. "
                         "Useful for short placement/tuning runs; the challenge "
                         "result itself requires the stock 4000")
+    p.add_argument("--stop-when-accurate", action="store_true",
+                   dest="stop_when_accurate",
+                   help="end each run as soon as the case's "
+                        "wallClockTimeStatistics function object knows the "
+                        "mean time per time step within its error, but not "
+                        "before its minTimeSteps (stopWhenAccurate); the "
+                        "runs are then partial")
     p.add_argument("--submit", action="store_true",
                    help="submit each generated script with sbatch "
                         "(default: only prepare files)")
@@ -1091,6 +1129,9 @@ def main(argv=None):
     print("nCores:    %s" % ", ".join(str(n) for n in ncores_list))
     if args.end_time:
         print("endTime:   %d iterations (stock is 4000)" % args.end_time)
+    if args.stop_when_accurate:
+        print("stop:      when the time per iteration is accurate "
+              "(stopWhenAccurate)")
     if args.ranks_per_numa:
         print("sweep:     %s ranks per %s over %d domain(s)/node"
               % (",".join(str(r) for r in args.ranks_per_numa),
@@ -1100,6 +1141,10 @@ def main(argv=None):
 
     case_dir = resolve_case(args, workspace)
     print("case:      %s" % display_path(case_dir, workspace))
+    if args.stop_when_accurate and not has_stop_when_accurate(case_dir):
+        sys.exit("error: --stop-when-accurate needs the stopWhenAccurate "
+                 "entry in system/FOwallClockTimeStatistics, which this case "
+                 "does not have yet")
     allrun = None
     if os.path.isfile(os.path.join(case_dir, "Allrun")):
         with open(os.path.join(case_dir, "Allrun")) as f:
@@ -1184,6 +1229,8 @@ def main(argv=None):
                 decompositionPlugin.apply(run_dir, plugin_spec)
             if args.end_time:
                 set_end_time(run_dir, args.end_time)
+            if args.stop_when_accurate:
+                set_stop_when_accurate(run_dir)
             script = render_slurm(template_text, run_dir, mesh, ncores,
                                    triplet, args.jobname, spec["tpn"],
                                    spec["ompiflags"], spec["extra_sbatch"],

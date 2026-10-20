@@ -19,10 +19,11 @@ The digest ignores comments and layout, so reformatting a file or commenting
 on it is no change, while every keyword, value or ``#include`` is.  Not a
 change either is what benchmark.py itself writes into a run copy: nCores,
 decompositionMethod and nHierarchical in caseDefinition, the multiLevelCoeffs
-of decomposeParDict, endTime (``--end-time``) and the MPI launcher of an
-Allrun that does not take it from the environment yet.  Nor is the choice of
-controlDict.withWrite over controlDict.noWrite, which the case allows for
-benchmarking the I/O as well.
+of decomposeParDict, endTime (``--end-time``), stopWhenAccurate of the
+wallClockTimeStatistics function object (``--stop-when-accurate``) and the MPI
+launcher of an Allrun that does not take it from the environment yet.  Nor is
+the choice of controlDict.withWrite over controlDict.noWrite, which the case
+allows for benchmarking the I/O as well.
 
 Allrun is adapted to the environment it runs in -- scheduler, OpenFOAM
 installation, MPI -- so its other differences are reported as notes; only the
@@ -62,6 +63,7 @@ MASKED = (
     (r"system/include/caseDefinition$",
      ("nCores", "decompositionMethod", "nHierarchical")),
     (r"system/controlDict(\..*)?$", ("endTime",)),
+    (r"system/FOwallClockTimeStatistics$", ("stopWhenAccurate",)),
 )
 MASK = "<set by benchmark.py>"
 
