@@ -213,16 +213,20 @@ together with a copy of `meta.yaml`, to
 `submissions/<YYYYMMDD>_<suffix>/<machine>/` of this checkout (or of the
 workspace when the script runs outside one). `<suffix>` is your handle,
 `legend_suffix` in `meta.yaml`, and the file is named after the machine and
-the cell count, for example `OHC1_DrivAer_hawk_65M.json`. Runs that did not
-reach the requested iteration count are harvested as well and marked partial,
-so a sweep can be inspected while other runs are still queued.
+the cell count, for example `OHC1_DrivAer_hawk_65M.json`. Runs with fewer
+than 4000 iterations are harvested as well and marked partial, whether they
+were set up shorter (`--end-time`, `--stop-when-accurate`) or are still
+going, so a sweep can be inspected while other runs are still queued.
 
 A run does not need all 4000 iterations: the dataset compares results by
 their time per iteration, and extrapolates it to 4000 iterations for the
 to-solution columns. A run does need enough time steps for a reliable time
 per iteration. The case's `wallClockTimeStatistics` function object computes
 how many time steps that takes for a 2% error at 95% confidence, and
-`postprocess.py` warns below the table when a run has fewer.
+`postprocess.py` warns below the table when a run has fewer. With
+`stopWhenAccurate` switched on (`benchmark.py --stop-when-accurate`), the
+function object ends the run itself once that is reached, but not before 200
+measured time steps (`minTimeSteps`).
 
 One sweep is one decomposition. By default, the `hierarchical-doubling` runs
 are harvested; `--decomposition scotch` (or any other name `benchmark.py`
@@ -279,6 +283,7 @@ The main options:
 | `--decomposition NAME` | Selects the decomposition: `hierarchical-doubling` (the case's cyclic doubling), `hierarchical-optimal` (the triplet with the smallest interface area for the `blockMeshDict` bounding box), `scotch`, or `multilevel-scotch`, `multilevel-metis`, `multilevel-kahip` (one level per hardware tier from `node-topology.yaml`, with that method within each). All but the default get their own run directories, e.g. `runs/coarse/512-scotch`. Only the two hierarchical ones count as Hardware Track. | `hierarchical-doubling`, from `--start 1,1,1` |
 | `--ranks-per-domain 8,12,16 --bind-object l3cache` | Sweeps the MPI rank placement inside a node, over the domains described in `node-topology.yaml`. | no placement sweep; `--bind-object numa` |
 | `--end-time N` | Shortens the runs, e.g. for a placement or tuning sweep. The dataset compares results by their time per iteration and extrapolates it to 4000 iterations for the to-solution columns, so a shorter run counts as well, as long as it has enough time steps for the acceptable wall-clock statistics of the case. | the case's own `endTime`, 4000 upstream |
+| `--stop-when-accurate` | Switches on `stopWhenAccurate` of the case's `wallClockTimeStatistics` function object: each run ends as soon as its time per iteration is known within 2% at 95% confidence, but not before 200 measured time steps. That saves most of the 4000 iterations, but the runs are partial. The case check ignores this switch. | off, the runs go to `endTime` |
 
 `./scripts/benchmark.py --help` lists the other options.
 
