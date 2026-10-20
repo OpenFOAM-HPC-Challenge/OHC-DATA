@@ -324,7 +324,7 @@ Every record must carry these.
 | `Run Wall-Clock Time [s]` | float | > 0 Solver only, excluding pre-processing. |
 | `Time per Iteration [s]` | float | > 0 |
 | `Is Energy Reported` | flag | 1 when the energy was measured, 0 when derived from the TDP. |
-| `Is Partial` | flag | 1 when the run stopped before the requested end time. |
+| `Is Partial` | flag | 1 when the run did fewer than 4000 iterations. |
 
 ### Optional (12)
 

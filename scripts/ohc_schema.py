@@ -168,7 +168,7 @@ FIELDS = [
     Field("Is Energy Reported", "flag", REQUIRED,
           doc="1 when the energy was measured, 0 when derived from the TDP."),
     Field("Is Partial", "flag", REQUIRED,
-          doc="1 when the run stopped before the requested end time."),
+          doc="1 when the run did fewer than 4000 iterations."),
 
     # -- derived ---------------------------------------------------------- #
     Field("Total Core Time [s]", "float", DERIVED, unit="s",

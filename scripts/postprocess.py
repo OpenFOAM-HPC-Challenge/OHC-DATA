@@ -74,6 +74,7 @@ from common import (CASE_BRANCH, CASE_DEFINITION, CASE_PATH,
                     read_text, sanitize)
 import case_manifest
 import topology
+from ohc_schema import NOMINAL_ITERATIONS
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -491,7 +492,9 @@ def collect_run(run_dir, mesh, window):
         "run_date": banner.get("date_raw", "N/A"),
         "iterations_requested": requested,
         "iterations_completed": completed,
-        "is_partial": bool(requested and completed and completed < requested),
+        # Every run short of the challenge's iterations, also one set up
+        # shorter (--end-time, --stop-when-accurate).
+        "is_partial": bool(completed and completed < NOMINAL_ITERATIONS),
         "hosts": [h for h, _ in banner.get("hosts", [])],
         "ranks_per_host": banner.get("hosts", [[None, None]])[0][1]
                           if banner.get("hosts") else None,
@@ -606,17 +609,19 @@ def add_parallel_efficiency(runs):
 def format_timestep(run):
     """Latest solver timestep as 'reached/requested', e.g. '1467/4000'.
 
-    A trailing '*' marks a run that has not reached the requested end time --
-    these numbers move while the queue is still working through the sweep.
+    A trailing '*' marks a partial run, short of the challenge's 4000
+    iterations: set up shorter, or still going while the queue works through
+    the sweep.
     """
     prov = run.get("provenance", {})
     done = prov.get("iterations_completed")
     total = prov.get("iterations_requested")
     if done is None:
         return "n/a"
+    star = "*" if prov.get("is_partial") else ""
     if not total:
-        return str(done)
-    return "%d/%d%s" % (done, total, "*" if prov.get("is_partial") else "")
+        return "%d%s" % (done, star)
+    return "%d/%d%s" % (done, total, star)
 
 
 def format_fvops_table(mesh, runs):
@@ -653,7 +658,8 @@ def format_fvops_table(mesh, runs):
     incomplete = any(r["provenance"].get("is_partial") for r in timed)
     lines.append("  (%.0fM cells; efficiency relative to %d cores%s)"
                  % (cells / 1e6, base,
-                    "; * = run still incomplete" if incomplete else ""))
+                    "; * = fewer than %d iterations" % NOMINAL_ITERATIONS
+                    if incomplete else ""))
     for run in untimed:
         lines.append("  %-13s no wall-clock samples, excluded from the table"
                      % run["name"])
@@ -675,7 +681,9 @@ def timing_warnings(runs):
         prov = run["provenance"]
         steps, required = prov.get("timed_steps"), prov.get("timed_steps_required")
         if steps is None or required is None:
-            if not prov.get("is_partial"):
+            done = prov.get("iterations_completed")
+            total = prov.get("iterations_requested")
+            if not (done and total and done < total):
                 lines.append("  ! %s: no wall-clock statistics in the solver "
                              "log" % run["name"])
             continue
