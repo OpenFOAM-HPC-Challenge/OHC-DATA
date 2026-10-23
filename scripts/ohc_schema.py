@@ -145,7 +145,7 @@ FIELDS = [
     Field("GPU Memory Bandwidth [GB/s]", "float", OPTIONAL, positive=True,
           unit="GB/s", doc="Theoretical peak per device."),
     Field("Last-Level Cache", "cache", OPTIONAL, default="N/A",
-          doc="Per node, e.g. '256MB' or 'on-package memory'."),
+          doc="Per socket, e.g. '256MB' or 'on-package memory'."),
     Field("Network Interconnect", "str", OPTIONAL, default="N/A"),
     Field("Storage File-System", "str", OPTIONAL, default="N/A"),
     Field("System TDP [W]", "float", REQUIRED, positive=True, unit="W",
@@ -168,7 +168,7 @@ FIELDS = [
     Field("Is Energy Reported", "flag", REQUIRED,
           doc="1 when the energy was measured, 0 when derived from the TDP."),
     Field("Is Partial", "flag", REQUIRED,
-          doc="1 when the run stopped before the requested end time."),
+          doc="1 when the run did fewer than 4000 iterations."),
 
     # -- derived ---------------------------------------------------------- #
     Field("Total Core Time [s]", "float", DERIVED, unit="s",

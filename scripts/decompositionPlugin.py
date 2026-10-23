@@ -9,13 +9,13 @@ method-specific dictionary writing.
 
 Currently provided:
 
-``multilevel``
+``multilevel-scotch``, ``multilevel-metis``, ``multilevel-kahip``
     OpenFOAM's ``multiLevel`` method, one level per hardware tier, each level
-    decomposed with ``scotch`` (or whatever ``--multilevel-method`` says).  The
-    intent is that every cut in the decomposition coincides with a real
-    boundary in the machine: the first split separates nodes, the next
-    separates sockets, the next L3 slices, and the innermost splits the ranks
-    that share one L3.  Communication then gets cheaper the deeper it stays.
+    decomposed with the method the name ends in.  The intent is that every
+    cut in the decomposition coincides with a real boundary in the machine:
+    the first split separates nodes, the next separates sockets, the next L3
+    slices, and the innermost splits the ranks that share one L3.
+    Communication then gets cheaper the deeper it stays.
 
 benchmark.py discovers this module with a plain ``import`` and degrades
 gracefully if it is absent, so the file can be deleted without breaking the
@@ -23,8 +23,9 @@ driver.  It is also usable on its own::
 
     python3 decompositionPlugin.py --ncores 720 --nodes 10 --show
 
-Requires a real ``libscotchDecomp.so`` in ``$FOAM_LIBBIN`` -- the ``dummy``
-stub links but aborts at run time.  ``check_method_available()`` reports this.
+Requires the real library of that method, e.g. ``libscotchDecomp.so``, in
+``$FOAM_LIBBIN`` -- the ``dummy`` stub links but aborts at run time.
+``check_method_available()`` (in common.py) reports this.
 
 Standard library only, like the rest of this case.
 """
@@ -34,12 +35,21 @@ import os
 import re
 import sys
 
-NAME = "multilevel"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import check_method_available
 
-# How many of each tier a single node contains, for the 2x AMD EPYC 9655 nodes
-# this case is tuned on.  Counts are PER NODE, not per parent tier, so any
-# ordering of tiers works out: the subdomain count for a level is simply how
-# many of that tier fit inside one of the tier above it.  Overridable with
+# The --decomposition names this module provides, and the method each one
+# uses within every level.
+METHODS = {"multilevel-scotch": "scotch", "multilevel-metis": "metis",
+           "multilevel-kahip": "kahip"}
+NAMES = tuple(METHODS)
+
+# How many of each tier a single node contains.  Counts are PER NODE, not per
+# parent tier, so any ordering of tiers works out: the subdomain count for a
+# level is simply how many of that tier fit inside one of the tier above it.
+# benchmark.py passes the counts of its node description (node-topology.yaml)
+# instead; these, for the 2x AMD EPYC 9655 nodes this case was tuned on, are
+# only the standalone default.  Either is overridable with
 # --multilevel-topology.
 DEFAULT_TOPOLOGY = {"socket": 2, "numa": 8, "cache": 24}
 
@@ -54,10 +64,6 @@ LEVEL_TIERS = ["node", "socket", "numa", "cache", "core"]
 
 def add_arguments(group):
     """Register this plugin's options on an argparse group."""
-    group.add_argument("--multilevel-method", default="scotch",
-                       dest="multilevel_method", metavar="M",
-                       help="decomposition method used within every level "
-                            "(default: scotch)")
     group.add_argument("--multilevel-levels", default="node,socket,cache,core",
                        dest="multilevel_levels", metavar="LIST",
                        help="hardware tiers to split on, outermost first, from "
@@ -68,15 +74,19 @@ def add_arguments(group):
                             % ",".join(LEVEL_TIERS))
     group.add_argument("--multilevel-topology", dest="multilevel_topology",
                        metavar="LIST", default=None,
-                       help="per-node counts of each tier as name=N pairs "
-                            "(default: %s)"
+                       help="per-node counts of each tier as name=N pairs, "
+                            "overriding the node description (benchmark.py: "
+                            "node-topology.yaml; standalone: %s)"
                             % ",".join("%s=%d" % kv
                                        for kv in sorted(DEFAULT_TOPOLOGY.items())))
 
 
-def parse_topology(text):
-    """Parse 'socket=2,numa=8,cache=24' into a per-node count mapping."""
-    topo = dict(DEFAULT_TOPOLOGY)
+def parse_topology(text, base=None):
+    """Parse 'socket=2,numa=8,cache=24' into a per-node count mapping.
+
+    Entries override `base` (default: DEFAULT_TOPOLOGY) one by one.
+    """
+    topo = dict(DEFAULT_TOPOLOGY if base is None else base)
     for item in (text or "").split(","):
         item = item.strip()
         if not item:
@@ -88,13 +98,19 @@ def parse_topology(text):
     return topo
 
 
-def spec_from_args(args, ncores, nodes):
-    """Build a decomposition spec from parsed benchmark.py arguments."""
+def spec_from_args(args, ncores, nodes, topology=None):
+    """Build a decomposition spec from parsed benchmark.py arguments.
+
+    The method within the levels comes from --decomposition.  `topology` is
+    the node's per-node tier counts, which --multilevel-topology overrides;
+    without it, DEFAULT_TOPOLOGY.
+    """
     return multilevel_spec(
         ncores, nodes,
         tiers=[t.strip() for t in args.multilevel_levels.split(",") if t.strip()],
-        topology=parse_topology(getattr(args, "multilevel_topology", None)),
-        method=args.multilevel_method)
+        topology=parse_topology(getattr(args, "multilevel_topology", None),
+                                topology),
+        method=METHODS[args.decomposition])
 
 
 # --------------------------------------------------------------------------- #
@@ -219,28 +235,6 @@ def apply(run_dir, spec):
     return spec
 
 
-def check_method_available(method="scotch"):
-    """(ok, message) for whether `method` is really linked into OpenFOAM.
-
-    OpenFOAM ships dummy stubs that link but abort at run time, so the
-    presence of a library name is not enough -- it must not be the dummy.
-    """
-    libbin = os.environ.get("FOAM_LIBBIN")
-    if not libbin:
-        return None, "FOAM_LIBBIN unset; source the OpenFOAM bashrc to check"
-    if method in ("hierarchical", "simple", "none"):
-        return True, "%s is built in" % method
-    real = os.path.join(libbin, "lib%sDecomp.so" % method)
-    dummy = os.path.join(libbin, "dummy", "lib%sDecomp.so" % method)
-    if os.path.exists(real):
-        return True, "%s available (%s)" % (method, real)
-    if os.path.exists(dummy):
-        return False, ("only the dummy stub for %s is present (%s); it links "
-                       "but aborts at run time -- build ThirdParty %s first"
-                       % (method, dummy, method))
-    return False, "no %sDecomp library found under %s" % (method, libbin)
-
-
 def main(argv=None):
     p = argparse.ArgumentParser(
         description="Compute or apply a multiLevel decomposition.")
@@ -250,12 +244,14 @@ def main(argv=None):
                    help="write the decomposition into this prepared run")
     p.add_argument("--show", action="store_true",
                    help="print the spec instead of writing it")
+    p.add_argument("--decomposition", choices=NAMES, default=NAMES[0],
+                   help="method within the levels (default: %s)" % NAMES[0])
     add_arguments(p.add_argument_group("multiLevel"))
     args = p.parse_args(argv)
 
     spec = spec_from_args(args, args.ncores, args.nodes)
     print(describe(spec))
-    ok, msg = check_method_available(args.multilevel_method)
+    ok, msg = check_method_available(METHODS[args.decomposition])
     print("  %s" % msg)
     if args.run_dir and not args.show:
         apply(args.run_dir, spec)

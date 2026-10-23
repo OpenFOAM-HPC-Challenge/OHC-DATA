@@ -217,6 +217,23 @@ all of them.  A record may override anything `meta` sets:
 One record is one simulation: one mesh, one node/core count, one run.  A
 strong-scaling sweep is several records in one file.
 
+`postprocess.py` also writes a `case` block into the envelope: the case the
+runs were checked against, i.e. the repository and branch it comes from, the
+`commit` it was at and the `digest` of the case at that commit, which is the
+same for commits that leave the case as it is.  Both are `null` when the case
+could not be checked, which makes the harvest Software Track.  The block is
+kept with the file and not appended to `data/data.json`:
+
+```json
+"case": {
+  "source": "https://develop.openfoam.com/committees/hpc",
+  "branch": "develop",
+  "path": "incompressible/simpleFoam/occDrivAerStaticMesh",
+  "commit": "84c262431117f5c921db8335e368a12d0e9fa3f0",
+  "digest": "979be23b9c5b736e01b55acb475f56807ad9a61d410d90d238799814ae5ced87"
+}
+```
+
 ## What is checked
 
 Beyond the per-field types and ranges in the table below:
@@ -307,7 +324,7 @@ Every record must carry these.
 | `Run Wall-Clock Time [s]` | float | > 0 Solver only, excluding pre-processing. |
 | `Time per Iteration [s]` | float | > 0 |
 | `Is Energy Reported` | flag | 1 when the energy was measured, 0 when derived from the TDP. |
-| `Is Partial` | flag | 1 when the run stopped before the requested end time. |
+| `Is Partial` | flag | 1 when the run did fewer than 4000 iterations. |
 
 ### Optional (12)
 
@@ -322,7 +339,7 @@ May be omitted, `null`, `"N/A"`, `"-"` or `"/"`; the placeholder in the last col
 | `CPU Memory Bandwidth [GB/s]` | float | > 0 Theoretical peak per node. stored as `null` when absent |
 | `GPU Model` | str | Required once Number of GPU Devices is non-zero. stored as `"N/A"` when absent |
 | `GPU Memory Bandwidth [GB/s]` | float | > 0 Theoretical peak per device. stored as `null` when absent |
-| `Last-Level Cache` | cache | Per node, e.g. '256MB' or 'on-package memory'. stored as `"N/A"` when absent |
+| `Last-Level Cache` | cache | Per socket, e.g. '256MB' or 'on-package memory'. stored as `"N/A"` when absent |
 | `Network Interconnect` | str | stored as `"N/A"` when absent |
 | `Storage File-System` | str | stored as `"N/A"` when absent |
 | `Pre-Processing Wall-Clock Time [s]` | number | >= 0 decomposePar + renumberMesh + potentialFoam + applyBoundaryLayer. stored as `null` when absent |

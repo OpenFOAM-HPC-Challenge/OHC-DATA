@@ -33,17 +33,23 @@ CASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CASE_DEFINITION = os.path.join("system", "include", "caseDefinition")
 
 # Upstream home of the case itself, in the OpenFOAM HPC committee repository.
+# The case is always taken from its develop branch: a Hardware Track run uses
+# that case unchanged.  The archive names the commit it was made from, which
+# case_manifest.py records with the manifest the runs are checked against.
 CASE_PROJECT_URL = "https://develop.openfoam.com/committees/hpc"
-CASE_REF = "develop"
+CASE_BRANCH = "develop"
 CASE_PATH = "incompressible/simpleFoam/occDrivAerStaticMesh"
-CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_REF, CASE_PATH)
+CASE_WEB_URL = "%s/-/tree/%s/%s" % (CASE_PROJECT_URL, CASE_BRANCH, CASE_PATH)
 
 # GitLab serves any subdirectory of a repository as its own tarball, so the
 # case comes down in one request and without a git client.  The archive still
 # carries the full path inside it, hence find_case() rather than a fixed
 # strip-components count.
 CASE_ARCHIVE_URL = ("%s/-/archive/%s/hpc-%s.tar.gz?path=%s"
-                    % (CASE_PROJECT_URL, CASE_REF, CASE_REF, CASE_PATH))
+                    % (CASE_PROJECT_URL, CASE_BRANCH, CASE_BRANCH, CASE_PATH))
+# Where the downloaded archive is kept, relative to the workspace: it is what
+# the runs are checked against, so it stays after the case is extracted.
+CASE_TARBALL = os.path.join("case", "occDrivAerStaticMesh.tar.gz")
 
 
 def is_case(path):
@@ -110,6 +116,54 @@ def parse_meshes(value):
                 % (tok, ", ".join(MESHES)))
         out.append(tok)
     return out
+
+
+# The --decomposition names: OpenFOAM's method first, then what varies within
+# it.  Every one but the default lives in run directories suffixed with its
+# name (512-scotch), so decompositions sit side by side in one workspace and
+# postprocess.py can tell their sweeps apart.
+DECOMPOSITIONS = ("hierarchical-doubling", "hierarchical-optimal", "scotch",
+                  "multilevel-scotch", "multilevel-metis", "multilevel-kahip")
+DEFAULT_DECOMPOSITION = DECOMPOSITIONS[0]
+
+
+def run_dirname(name, decomposition):
+    """A run directory's name: `name` (the nCores or nodes it is keyed on),
+    suffixed with the decomposition unless that is the default."""
+    if decomposition == DEFAULT_DECOMPOSITION:
+        return str(name)
+    return "%s-%s" % (name, decomposition)
+
+
+def parse_run_dirname(dirname, decomposition):
+    """The number a run directory of `decomposition` is keyed on, or None
+    when `dirname` is not one of that decomposition's run directories."""
+    m = re.match(r"(\d+)(?:-(.+))?$", dirname)
+    if not m or (m.group(2) or DEFAULT_DECOMPOSITION) != decomposition:
+        return None
+    return int(m.group(1))
+
+
+def check_method_available(method="scotch"):
+    """(ok, message) for whether `method` is really linked into OpenFOAM.
+
+    OpenFOAM ships dummy stubs that link but abort at run time, so the
+    presence of a library name is not enough -- it must not be the dummy.
+    """
+    libbin = os.environ.get("FOAM_LIBBIN")
+    if not libbin:
+        return None, "FOAM_LIBBIN unset; source the OpenFOAM bashrc to check"
+    if method in ("hierarchical", "simple", "none"):
+        return True, "%s is built in" % method
+    real = os.path.join(libbin, "lib%sDecomp.so" % method)
+    dummy = os.path.join(libbin, "dummy", "lib%sDecomp.so" % method)
+    if os.path.exists(real):
+        return True, "%s available (%s)" % (method, real)
+    if os.path.exists(dummy):
+        return False, ("only the dummy stub for %s is present (%s); it links "
+                       "but aborts at run time -- build ThirdParty %s first"
+                       % (method, dummy, method))
+    return False, "no %sDecomp library found under %s" % (method, libbin)
 
 
 def add_shared_arguments(p):

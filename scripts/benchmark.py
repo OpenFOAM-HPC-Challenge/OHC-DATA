@@ -7,18 +7,29 @@ Challenge occDrivAer case.  It
 
   0. obtains the case itself -- the directory this script sits in when that
      is already a case, otherwise the upstream one, downloaded from the
-     OpenFOAM HPC committee repository into ``<workspace>/case/``,
+     develop branch of the OpenFOAM HPC committee repository into
+     ``<workspace>/case/`` -- and records the upstream case in
+     ``<workspace>/case-manifest.json``, which postprocess.py checks the runs
+     against (see case_manifest.py),
   1. downloads and extracts the requested polyMesh resolution(s)
-     (fine / medium / coarse) from Zenodo -- by default all three,
+     (fine / medium / coarse) from Zenodo -- by default all three -- or
+     copies in the existing mesh ``--polymesh`` names instead,
   2. builds one self-contained case copy per (mesh, nCores) combination under
      ``<workspace>/runs/<mesh>/<nCores>/``, with the polyMesh symlinked to a
-     shared, downloaded-once copy,
-  3. prepares the hierarchical decomposition for each nCores using the
-     ``decompositionIter`` doubling strategy and writes it into that copy's
-     ``system/include/caseDefinition``,
-  4. renders a SLURM batch script from ``--slurm-template`` (or a built-in
-     default) that supplies the sbatch directives and calls ``Allrun``,
-  5. optionally submits every generated script with ``sbatch`` (``--submit``).
+     shared, downloaded-once copy and an ``Allrun`` whose MPI launcher and
+     flags ``run.slurm`` can set (``MPI_LAUNCHER``, ``OMPI_FLAGS``),
+  3. writes the decomposition for each nCores into that copy's
+     ``system/include/caseDefinition`` -- by default ``hierarchical`` with
+     the ``decompositionIter`` doubling strategy (``--decomposition``),
+  4. derives tasks per node and the topology defaults of the multilevel
+     decompositions and the placement sweep from
+     ``<workspace>/node-topology.yaml``, a description of the compute node
+     detected on first use (``--probe-node`` rewrites it on a compute node),
+  5. renders a SLURM batch script from ``--slurm-template``, or else from
+     ``<workspace>/slurm.template`` -- written from a built-in default on
+     first use, for you to adapt -- that supplies the sbatch directives and
+     calls ``Allrun``,
+  6. optionally submits every generated script with ``sbatch`` (``--submit``).
 
 Harvesting the finished runs back into a submission file is the job of the
 sibling script ``postprocess.py``; what the two share lives in ``common.py``.
@@ -41,9 +52,11 @@ Examples
 """
 
 import argparse
+import gzip
 import itertools
 import os
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -52,9 +65,15 @@ import tarfile
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_ARCHIVE_URL, CASE_DEFINITION, CASE_DIR,
-                    CASE_WEB_URL, MESHES, ZENODO_URL, add_shared_arguments,
-                    display_path, is_case, parse_posint_list, parse_start)
+from common import (CASE_ARCHIVE_URL, CASE_BRANCH, CASE_DEFINITION, CASE_DIR,
+                    CASE_TARBALL, CASE_WEB_URL, DECOMPOSITIONS,
+                    DEFAULT_DECOMPOSITION,
+                    MESH_CELLS, MESHES, ZENODO_URL, add_shared_arguments,
+                    check_method_available, run_dirname,
+                    display_path, is_case, parse_posint_list, parse_start,
+                    read_text)
+import case_manifest
+import topology
 
 # Optional: decomposition methods that need more than a coefficient triplet
 # (currently multiLevel) live in a sibling module.  Absent is fine -- the two
@@ -69,17 +88,27 @@ except ImportError:
 # Static configuration
 # --------------------------------------------------------------------------- #
 
-# Per-node topology defaults for each hwloc object a placement sweep can map
-# by, for the 2x AMD EPYC 9655 nodes this case is tuned on: 8 NUMA domains of
-# 24 cores, which are themselves 24 L3 slices (CCDs) of 8 cores.  Mapping by
-# NUMA alone packs ranks into the low L3 slices and leaves the rest idle, so
-# the finer object is often the one worth sweeping.  Override per site with
-# --domains-per-node / --cores-per-domain.
-BIND_OBJECTS = {
-    "numa":    {"domains_per_node": 8,  "cores_per_domain": 24},
-    "l3cache": {"domains_per_node": 24, "cores_per_domain": 8},
-    "package": {"domains_per_node": 2,  "cores_per_domain": 96},
-}
+# The hwloc objects a placement sweep can map by, and the node description
+# (node-topology.yaml) count each one comes from.  On chiplet CPUs several L3
+# slices share a NUMA domain, and mapping by NUMA alone packs ranks into the
+# low slices and leaves the rest idle, so the finer object is often the one
+# worth sweeping.  Override per run with --domains-per-node /
+# --cores-per-domain.
+BIND_OBJECTS = {"numa": "numa_per_node", "l3cache": "l3_per_node",
+                "package": "sockets"}
+
+
+def bind_object_topology(node, bind_object):
+    """Domains per node and physical cores per domain of `bind_object`."""
+    domains = node[BIND_OBJECTS[bind_object]]
+    return {"domains_per_node": domains,
+            "cores_per_domain": node["cores_per_node"] // domains}
+
+
+def node_tiers(node):
+    """The node description as the multilevel plugin's per-node tier counts."""
+    return {"socket": node["sockets"], "numa": node["numa_per_node"],
+            "cache": node["l3_per_node"]}
 
 # Directory that contains this script is treated as the pristine source case.
 CASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -93,9 +122,12 @@ IGNORE_NAMES = {
     "benchmark.py", "slurm.template",
 }
 
-# Built-in SLURM template used when --slurm-template is not given.  Placeholders
-# use string.Template syntax ($name); bash ${VAR} / $VAR expansions are left
-# untouched because their names are not in the substitution mapping.
+# Built-in SLURM template, written to <workspace>/slurm.template on first use
+# when --slurm-template is not given.  Placeholders use string.Template syntax
+# ($name); bash ${VAR} / $VAR expansions are left untouched because their names
+# are not in the substitution mapping.
+SLURM_TEMPLATE_NAME = "slurm.template"
+PROBE_SCRIPT_NAME = "probe.slurm"
 DEFAULT_SLURM_TEMPLATE = """\
 #!/bin/bash -l
 #SBATCH --job-name=$jobname
@@ -103,11 +135,13 @@ DEFAULT_SLURM_TEMPLATE = """\
 #SBATCH --ntasks-per-node=$tpn
 #SBATCH --nodes=$nodes
 #SBATCH --partition=arm
+#SBATCH --time=24:00:00
 #SBATCH --output=%x-%j.out
 #SBATCH --error=%x-%j.err
 $extrasbatch
 
 export OMPI_FLAGS="$ompiflags"
+export MPI_LAUNCHER="$launcher"
 
 cd $casedir
 ./Allrun
@@ -214,7 +248,7 @@ def optimal_triplet(ncores, extents):
     return list(best)
 
 
-def hierarchical_for(ncores, start):
+def hierarchical_for(ncores, start, quiet=False):
     """Return the hierarchical triplet [nx, ny, nz] whose product is `ncores`.
 
     Uses the decompositionIter doubling strategy first (the intended path for
@@ -231,8 +265,9 @@ def hierarchical_for(ncores, start):
             break
 
     triplet = balanced_triplet(ncores)
-    print("  ! %d not reachable by doubling from %s; using balanced %s"
-          % (ncores, start, tuple(triplet)))
+    if not quiet:
+        print("  ! %d not reachable by doubling from %s; using balanced %s"
+              % (ncores, start, tuple(triplet)))
     return triplet
 
 
@@ -270,11 +305,32 @@ def download(url, dest):
     os.rename(part, dest)
 
 
+def has_points(path):
+    """True when `path` holds a mesh's points, as a polyMesh directory does."""
+    return any(os.path.isfile(os.path.join(path, name))
+               for name in ("points", "points.gz"))
+
+
+def mesh_cells(polymesh):
+    """The cell count in the header note of the mesh's owner file, or None.
+
+    OpenFOAM writes ``note "nPoints:... nCells:... ..."`` into that header,
+    which stays plain text even in a binary or compressed file.
+    """
+    for name, opener in (("owner", open), ("owner.gz", gzip.open)):
+        path = os.path.join(polymesh, name)
+        if os.path.isfile(path):
+            with opener(path, "rb") as f:
+                head = f.read(4096).decode("latin-1")
+            m = re.search(r"nCells:\s*(\d+)", head)
+            return int(m.group(1)) if m else None
+    return None
+
+
 def find_polymesh(root):
     """Locate a polyMesh directory (one containing 'points') under `root`."""
     for dirpath, dirnames, filenames in os.walk(root):
-        if os.path.basename(dirpath) == "polyMesh" and (
-                "points" in filenames or "points.gz" in filenames):
+        if os.path.basename(dirpath) == "polyMesh" and has_points(dirpath):
             return dirpath
     return None
 
@@ -315,14 +371,48 @@ def extract(tarball, destdir, locate=find_polymesh, what="polyMesh"):
     return found
 
 
-def prepare_mesh(mesh, meshes_dir):
-    """Download and extract one mesh, returning the shared polyMesh path."""
+def mesh_files(polymesh):
+    """{file name: size} of a polyMesh directory, to tell two meshes apart."""
+    return {name: os.path.getsize(os.path.join(polymesh, name))
+            for name in os.listdir(polymesh)
+            if os.path.isfile(os.path.join(polymesh, name))}
+
+
+def copy_polymesh(src, dst):
+    """Copy the polyMesh `src` to `dst`. Atomic via .part, like download()."""
+    part = dst + ".part"
+    if os.path.exists(part):
+        shutil.rmtree(part)
+    size = sum(mesh_files(src).values())
+    print("  > copying %s (%.1f GB)" % (src, size / 1e9))
+    shutil.copytree(src, part)
+    os.rename(part, dst)
+    return dst
+
+
+def prepare_mesh(mesh, meshes_dir, polymesh=None):
+    """Provide one mesh in the workspace, returning the shared polyMesh path.
+
+    A mesh already there is reused, whether or not its tarball is still
+    around.  Otherwise the `polymesh` given by the user is copied in, or the
+    mesh is downloaded and extracted.
+    """
     tarname, label = MESHES[mesh]
     print("[mesh] %s (%s cells)" % (mesh, label))
     tarball = os.path.join(meshes_dir, tarname)
     extract_dir = os.path.join(meshes_dir, mesh)
     os.makedirs(extract_dir, exist_ok=True)
 
+    existing = find_polymesh(extract_dir)
+    if existing and polymesh and mesh_files(existing) != mesh_files(polymesh):
+        sys.exit("error: the workspace already holds a different %s mesh, "
+                 "%s; remove it to copy --polymesh %s in instead"
+                 % (mesh, existing, polymesh))
+    if existing:
+        print("  = already in the workspace: %s" % existing)
+        return existing
+    if polymesh:
+        return copy_polymesh(polymesh, os.path.join(extract_dir, "polyMesh"))
     download(ZENODO_URL.format(tarname), tarball)
     return extract(tarball, extract_dir)
 
@@ -343,7 +433,7 @@ def prepare_case(workspace):
         return existing
 
     print("[case] %s" % CASE_WEB_URL)
-    tarball = os.path.join(case_root, "occDrivAerStaticMesh.tar.gz")
+    tarball = os.path.join(workspace, CASE_TARBALL)
     download(CASE_ARCHIVE_URL, tarball)
     return extract(tarball, case_root, locate=find_case, what="case")
 
@@ -382,10 +472,47 @@ def _ignore(dirpath, names):
     return ignored
 
 
+def allrun_with_launcher(text):
+    """`text` of an Allrun whose MPI launcher and flags the environment sets.
+
+    The upstream Allrun takes both from the environment, MPI_LAUNCHER and
+    OMPI_FLAGS, so it is returned as it is.  An older one hard-codes
+    ``mpirun -np`` and resets OMPI_FLAGS, so neither a site without mpirun
+    nor the placement flags run.slurm exports would get through: both become
+    overridable, with those values as defaults.  None when `text` has
+    neither form.
+    """
+    if "MPI_LAUNCHER" in text:
+        return text
+    text, n1 = re.subn(r'(?m)^OMPI_FLAGS=""', 'OMPI_FLAGS="${OMPI_FLAGS:-}"',
+                       text)
+    text, n2 = re.subn(
+        r'(?m)^parEx="mpirun -np \$\{nProcs\} \$\{OMPI_FLAGS\}"$',
+        'MPI_LAUNCHER="${MPI_LAUNCHER:-mpirun -np}"  # run.slurm may set it\n'
+        'parEx="${MPI_LAUNCHER} ${nProcs} ${OMPI_FLAGS}"', text)
+    return text if n1 == 1 and n2 == 1 else None
+
+
 def copy_case(src, dst):
     """Copy the pristine case into `dst` (excluding mesh / generated files)."""
-    shutil.copytree(src, dst, ignore=_ignore,
-                    symlinks=True, dirs_exist_ok=True)
+    for dirpath, dirnames, filenames in os.walk(src):
+        ignored = _ignore(dirpath, dirnames + filenames)
+        target = os.path.join(dst, os.path.relpath(dirpath, src))
+        os.makedirs(target, exist_ok=True)
+        subdirs = []
+        for name in dirnames + filenames:
+            if name in ignored:
+                continue
+            s, d = os.path.join(dirpath, name), os.path.join(target, name)
+            if os.path.islink(s):
+                if os.path.islink(d) or os.path.isfile(d):
+                    os.unlink(d)
+                os.symlink(os.readlink(s), d)
+            elif name in dirnames:
+                subdirs.append(name)
+            else:
+                shutil.copy2(s, d)
+        dirnames[:] = subdirs
 
 
 def link_polymesh(run_dir, polymesh):
@@ -415,6 +542,20 @@ def set_decomposition(run_dir, ncores, triplet):
                            "(nCores=%d, nHierarchical=%d matches)"
                            % (path, n1, n2))
 
+    with open(path, "w") as f:
+        f.write(text)
+
+
+def set_method(run_dir, method):
+    """Rewrite decompositionMethod in the run's caseDefinition."""
+    path = os.path.join(run_dir, CASE_DEFINITION)
+    with open(path) as f:
+        text = f.read()
+    text, n = re.subn(r"(?m)^(\s*decompositionMethod\s+)\S+;",
+                      r"\g<1>%s;" % method, text)
+    if n != 1:
+        raise RuntimeError("could not set decompositionMethod in %s "
+                           "(%d matches)" % (path, n))
     with open(path, "w") as f:
         f.write(text)
 
@@ -464,12 +605,92 @@ def set_end_time(run_dir, end_time):
     return patched
 
 
+# The switch of the wallClockTimeStatistics function object that ends the
+# run once the time per time step is known within its error.
+STOP_WHEN_ACCURATE = re.compile(r"(?m)^(\s*stopWhenAccurate\s+)\w+;")
+
+
+def has_stop_when_accurate(case_dir):
+    """Whether the case's function object has the stopWhenAccurate switch."""
+    path = os.path.join(case_dir, "system", "FOwallClockTimeStatistics")
+    return bool(STOP_WHEN_ACCURATE.search(read_text(path) or ""))
+
+
+def set_stop_when_accurate(run_dir):
+    """Switch on stopWhenAccurate of the wallClockTimeStatistics function
+    object in one run copy.
+
+    The run then ends as soon as the mean wall-clock time per time step is
+    known within the function object's error, but not before its minTimeSteps
+    measured time steps; such a run is partial.
+    """
+    path = os.path.join(run_dir, "system", "FOwallClockTimeStatistics")
+    with open(path) as f:
+        text = f.read()
+    text, count = STOP_WHEN_ACCURATE.subn(r"\g<1>true;", text)
+    if count != 1:
+        raise RuntimeError("could not set stopWhenAccurate in %s (%d matches)"
+                           % (path, count))
+    with open(path, "w") as f:
+        f.write(text)
+
+
+def workspace_template(workspace):
+    """The workspace's SLURM template as (path, fresh).
+
+    Written from the built-in default the first time (fresh is then True) and
+    reused afterwards, so editing it and re-running re-renders every run.slurm.
+    """
+    path = os.path.join(workspace, SLURM_TEMPLATE_NAME)
+    if os.path.exists(path):
+        return path, False
+    with open(path, "w") as f:
+        f.write(DEFAULT_SLURM_TEMPLATE)
+    return path, True
+
+
+def write_probe_script(template_text, workspace):
+    """Render the SLURM template into <workspace>/probe.slurm, a job that runs
+    --probe-node on a compute node in place of Allrun.
+
+    It keeps the site settings of the template -- account, partition,
+    environment -- and appends the probe's own directives after its last
+    #SBATCH line, where they override the template's.  Returns the path, or
+    None when the template has no ./Allrun line to replace.
+    """
+    text = string.Template(template_text).safe_substitute({
+        "jobname": "probe-node", "ncores": 1, "tpn": 1, "nodes": 1,
+        "casedir": workspace, "ompiflags": "", "launcher": "srun -n",
+        "extrasbatch": "", "mesh": "", "nhierarchical": "",
+    })
+    probe = " ".join(shlex.quote(arg) for arg in (
+        sys.executable, os.path.abspath(__file__), "--probe-node",
+        "--workspace", workspace))
+    text, n = re.subn(r"(?m)^(\s*)\./Allrun\b.*$",
+                      lambda m: m.group(1) + probe, text)
+    if n == 0:
+        return None
+    lines = text.split("\n")
+    last = max([i for i, line in enumerate(lines)
+                if line.startswith("#SBATCH")] or [0])
+    lines[last + 1:last + 1] = ["#SBATCH --nodes=1", "#SBATCH --ntasks=1",
+                                "#SBATCH --exclusive",
+                                "#SBATCH --time=00:10:00"]
+    path = os.path.join(workspace, PROBE_SCRIPT_NAME)
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+    os.chmod(path, 0o755)
+    return path
+
+
 def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
                  ompiflags="", extra_sbatch="", label=None):
     """Render the SLURM script for one run and write it as run.slurm.
 
     `label` disambiguates the job name when nCores alone does not -- a
     fixed-total-ranks sweep runs the same core count on several node counts.
+    The launcher is srun, except for runs with placement flags: those are
+    Open MPI options, which only mpirun accepts.
     """
     nodes = (ncores + tpn - 1) // tpn  # ceil division
     mapping = {
@@ -482,6 +703,7 @@ def render_slurm(template_text, run_dir, mesh, ncores, triplet, jobname, tpn,
         "nodes": nodes,
         "casedir": os.path.abspath(run_dir),
         "ompiflags": ompiflags,
+        "launcher": "mpirun -np" if ompiflags else "srun -n",
         "extrasbatch": extra_sbatch,
     }
     text = string.Template(template_text).safe_substitute(mapping)
@@ -517,6 +739,9 @@ examples:
   # Copy the runs from a case of your own rather than the upstream one
   ./benchmark.py --ncores 512 --case /path/to/my/occDrivAerStaticMesh
 
+  # Use a coarse mesh you already have instead of downloading it
+  ./benchmark.py --mesh coarse --ncores 512 --polymesh /path/to/polyMesh
+
   # Once the queue is done, harvest that workspace with the sibling script
   ./postprocess.py --workspace /scratch/$USER/occDrivAer
 """
@@ -546,6 +771,11 @@ def build_parser():
                         "the directory this script sits in when that is a "
                         "case, otherwise the upstream case, downloaded into "
                         "<workspace>/case)")
+    p.add_argument("--polymesh", metavar="DIR",
+                   help="existing polyMesh directory to copy into "
+                        "<workspace>/meshes instead of downloading the mesh; "
+                        "--mesh must name the one resolution it is "
+                        "(default: the Zenodo mesh)")
     p.add_argument("--download-case", action="store_true", dest="download_case",
                    help="always fetch the upstream case from the OpenFOAM HPC "
                         "committee repository, even when this script already "
@@ -553,38 +783,61 @@ def build_parser():
     p.add_argument("--slurm-template", metavar="FILE",
                    help="SLURM template file providing sbatch directives; "
                         "$ncores $nhierarchical $mesh $jobname $tpn $nodes "
-                        "$casedir are substituted (default: built-in template)")
-    decomp_choices = ["doubling", "optimal"]
-    if decompositionPlugin:
-        decomp_choices.append(decompositionPlugin.NAME)
-    p.add_argument("--decomposition", choices=tuple(decomp_choices),
-                   default="doubling", dest="decomposition",
-                   help="how to pick nHierarchical: 'doubling' follows the "
-                        "--start triplet cyclically (the case's own "
-                        "convention); 'optimal' minimises the interface area "
-                        "against the blockMeshDict bounding box, which matters "
-                        "on this elongated domain%s (default: doubling)"
-                        % ("; '%s' delegates to decompositionPlugin.py"
-                           % decompositionPlugin.NAME if decompositionPlugin
-                           else ""))
+                        "$casedir are substituted (default: "
+                        "<workspace>/slurm.template, written from the "
+                        "built-in template on first use)")
+    p.add_argument("--decomposition", dest="decomposition",
+                   choices=tuple(d for d in DECOMPOSITIONS
+                                 if decompositionPlugin
+                                 or not d.startswith("multilevel")),
+                   default=DEFAULT_DECOMPOSITION,
+                   help="OpenFOAM method and how it is set up: "
+                        "'hierarchical-doubling' follows the --start triplet "
+                        "cyclically (the case's own convention); "
+                        "'hierarchical-optimal' minimises the interface area "
+                        "against the blockMeshDict bounding box, which "
+                        "matters on this elongated domain; 'scotch' needs no "
+                        "set-up%s. All but the default get their own run "
+                        "directories, e.g. runs/<mesh>/512-scotch "
+                        "(default: %s)"
+                        % ("; 'multilevel-scotch', 'multilevel-metis' and "
+                           "'multilevel-kahip' split by hardware tier with "
+                           "that method in every level, see "
+                           "decompositionPlugin.py"
+                           if decompositionPlugin else "",
+                           DEFAULT_DECOMPOSITION))
     p.add_argument("--domain-aspect", type=parse_start, dest="domain_aspect",
                    metavar="X,Y,Z",
                    help="override the domain side lengths used by "
-                        "--decomposition optimal (default: read from "
-                        "system/blockMeshDict)")
+                        "--decomposition hierarchical-optimal (default: "
+                        "read from system/blockMeshDict)")
     p.add_argument("--start", type=parse_start, default=[1, 1, 1],
                    metavar="X,Y,Z",
                    help="start triplet for the decompositionIter doubling "
                         "(default: 1,1,1)")
     p.add_argument("--jobname", default="DrivAer_RANS",
                    help="base SLURM job name (default: DrivAer_RANS)")
-    p.add_argument("--ntasks-per-node", type=int, default=128, dest="tpn",
+    p.add_argument("--ntasks-per-node", type=int, default=None, dest="tpn",
                    metavar="N",
-                   help="tasks per node used to derive --nodes (default: 128)")
+                   help="tasks per node used to derive --nodes (default: "
+                        "cores_per_node of the node description)")
+    p.add_argument("--probe-node", action="store_true", dest="probe_node",
+                   help="only detect this machine's topology and write it to "
+                        "<workspace>/%s, replacing what is there, and write "
+                        "<workspace>/%s, a job that does the same on a "
+                        "compute node" % (topology.NODE_FILE,
+                                          PROBE_SCRIPT_NAME))
     p.add_argument("--end-time", type=int, dest="end_time", metavar="N",
                    help="override endTime (iteration count) in the run copies. "
                         "Useful for short placement/tuning runs; the challenge "
                         "result itself requires the stock 4000")
+    p.add_argument("--stop-when-accurate", action="store_true",
+                   dest="stop_when_accurate",
+                   help="end each run as soon as the case's "
+                        "wallClockTimeStatistics function object knows the "
+                        "mean time per time step within its error, but not "
+                        "before its minTimeSteps (stopWhenAccurate); the "
+                        "runs are then partial")
     p.add_argument("--submit", action="store_true",
                    help="submit each generated script with sbatch "
                         "(default: only prepare files)")
@@ -619,14 +872,14 @@ def build_parser():
                         "nodes than this")
     g.add_argument("--numa-per-node", "--domains-per-node", type=int,
                    default=None, dest="domains_per_node", metavar="N",
-                   help="domains of --bind-object per node (default: 8 for "
-                        "numa, 24 for l3cache, 2 for package)")
+                   help="domains of --bind-object per node (default: from "
+                        "the node description)")
     g.add_argument("--cores-per-numa", "--cores-per-domain", type=int,
                    default=None, dest="cores_per_domain", metavar="N",
-                   help="physical cores per domain (default: 24 for numa, 8 "
-                        "for l3cache, 96 for package). Above this the sweep "
-                        "binds to hardware threads instead of cores and asks "
-                        "SLURM for two tasks per core")
+                   help="physical cores per domain (default: from the node "
+                        "description). Above this the sweep binds to "
+                        "hardware threads instead of cores and asks SLURM for "
+                        "two tasks per core")
 
     if decompositionPlugin:
         decompositionPlugin.add_arguments(
@@ -646,16 +899,86 @@ def main(argv=None):
     if args.case and args.download_case:
         parser.error("--case names a local case; drop --download-case")
 
+    if args.polymesh:
+        if len(args.mesh) != 1:
+            parser.error("--polymesh is the mesh of one resolution; name it "
+                         "with --mesh fine, medium or coarse")
+        if not has_points(args.polymesh):
+            parser.error("--polymesh %s is not a polyMesh directory (no "
+                         "points or points.gz in it)" % args.polymesh)
+        args.polymesh = os.path.abspath(args.polymesh)
+        # The resolution names the results, so a mesh given under the wrong
+        # one would be harvested under the wrong cell count.
+        mesh, cells = args.mesh[0], mesh_cells(args.polymesh)
+        if cells is None:
+            print("warning: cannot read the cell count from the owner file "
+                  "of --polymesh %s; not confirmed to be the %s mesh"
+                  % (args.polymesh, mesh), file=sys.stderr)
+        elif abs(cells / MESH_CELLS[mesh] - 1) > 0.1:
+            closest = min(MESH_CELLS,
+                          key=lambda m: abs(cells / MESH_CELLS[m] - 1))
+            hint = ("it looks like --mesh %s" % closest
+                    if abs(cells / MESH_CELLS[closest] - 1) <= 0.1
+                    else "it matches none of the resolutions")
+            parser.error("--polymesh %s has %d cells, not the %s mesh "
+                         "(%dM); %s" % (args.polymesh, cells, mesh,
+                                        MESH_CELLS[mesh] / 1e6, hint))
+
     if args.postprocess:
         parser.error("--postProcess has moved into its own script; run "
                      "'postprocess.py --workspace %s' instead" % args.workspace)
+
+    # The node description supplies every per-node default below: the
+    # workspace's node-topology.yaml, or -- the first time -- this machine,
+    # detected.
+    workspace = os.path.abspath(args.workspace)
+    node_path = os.path.join(workspace, topology.NODE_FILE)
+    if args.probe_node:
+        node, undetected = topology.detect()
+        os.makedirs(workspace, exist_ok=True)
+        topology.write(node_path, node, undetected)
+        print("wrote %s: %s, detected on %s"
+              % (node_path, topology.describe(node), node[topology.HOST_KEY]))
+        if undetected:
+            print("not detected, fill in: %s" % ", ".join(undetected))
+        if os.environ.get("SLURM_JOB_ID"):
+            return          # already on a compute node
+        if args.slurm_template:
+            template_path, fresh_template = args.slurm_template, False
+        else:
+            template_path, fresh_template = workspace_template(workspace)
+        with open(template_path) as f:
+            script = write_probe_script(f.read(), workspace)
+        if script is None:
+            print("\nthat is %s, the machine this ran on. To describe the "
+                  "compute nodes instead, run --probe-node on one, e.g. in an "
+                  "srun: %s has no ./Allrun line to turn into a probe job."
+                  % (node[topology.HOST_KEY], template_path))
+            return
+        print("\nthat is %s, the machine this ran on. To describe the "
+              "compute nodes instead, submit the probe job written from %s%s:"
+              % (node[topology.HOST_KEY], template_path,
+                 " -- just written from the built-in default, so adapt it to "
+                 "your site and re-run --probe-node first"
+                 if fresh_template else ""))
+        print("  (cd %s && sbatch %s)" % (workspace, PROBE_SCRIPT_NAME))
+        return
+    fresh_node = not os.path.exists(node_path)
+    if fresh_node:
+        node, undetected = topology.detect()
+    else:
+        try:
+            node = topology.load(node_path)
+        except ValueError as exc:
+            sys.exit("error: %s" % exc)
+        undetected = []
 
     # Resolve the runs: --ncores directly, the product of --nnodes and
     # --ncores-per-node, or a NUMA placement sweep.  The paths are exclusive.
     # Each entry is a dict so a run carries its own node count, directory name
     # and placement -- a fixed-total-ranks sweep has identical nCores
     # throughout and could not be keyed on that.
-    tpn = args.tpn
+    tpn = args.tpn or node["cores_per_node"]
     runs = []
 
     if args.ranks_per_numa is not None:
@@ -663,7 +986,7 @@ def main(argv=None):
             parser.error("--ranks-per-domain cannot be combined with "
                          "--ncores/--ncores-per-node")
         # Topology follows the chosen object unless overridden explicitly.
-        topo = BIND_OBJECTS[args.bind_object]
+        topo = bind_object_topology(node, args.bind_object)
         if args.domains_per_node is None:
             args.domains_per_node = topo["domains_per_node"]
         if args.cores_per_domain is None:
@@ -764,26 +1087,51 @@ def main(argv=None):
                  "ompiflags": "", "extra_sbatch": ""}
                 for n in ncores_list]
 
+    # Every decomposition but the default gets its own run directories and
+    # job names, so several can be prepared side by side in one workspace.
+    for spec in runs:
+        spec["dirname"] = run_dirname(spec["dirname"], args.decomposition)
+        if args.decomposition != DEFAULT_DECOMPOSITION:
+            spec["label"] = "%s_%s" % (spec["label"] or spec["ncores"],
+                                       args.decomposition)
+
     if args.submit and not shutil.which("sbatch"):
         sys.exit("error: --submit given but 'sbatch' not found in PATH")
 
-    if args.slurm_template:
-        with open(args.slurm_template) as f:
-            template_text = f.read()
-    else:
-        template_text = DEFAULT_SLURM_TEMPLATE
-
-    workspace = os.path.abspath(args.workspace)
     meshes_dir = os.path.join(workspace, "meshes")
     runs_dir = os.path.join(workspace, "runs")
     os.makedirs(meshes_dir, exist_ok=True)
     os.makedirs(runs_dir, exist_ok=True)
+    if fresh_node:
+        topology.write(node_path, node, undetected)
+
+    if args.slurm_template:
+        template_path, fresh_template = args.slurm_template, False
+    else:
+        template_path, fresh_template = workspace_template(workspace)
+    with open(template_path) as f:
+        template_text = f.read()
 
     print("workspace: %s" % workspace)
+    print("template:  %s%s" % (display_path(template_path, workspace),
+                               " (written from the built-in default)"
+                               if fresh_template else ""))
+    print("node:      %s (%s%s)" % (topology.describe(node),
+                                    display_path(node_path, workspace),
+                                    ", %sdetected on %s"
+                                    % ("just " if fresh_node else "",
+                                       node[topology.HOST_KEY])
+                                    if node.get(topology.HOST_KEY) else ""))
+    if undetected:
+        print("           not detected, fallbacks used: %s"
+              % ", ".join(undetected))
     print("meshes:    %s" % ", ".join(args.mesh))
     print("nCores:    %s" % ", ".join(str(n) for n in ncores_list))
     if args.end_time:
         print("endTime:   %d iterations (stock is 4000)" % args.end_time)
+    if args.stop_when_accurate:
+        print("stop:      when the time per iteration is accurate "
+              "(stopWhenAccurate)")
     if args.ranks_per_numa:
         print("sweep:     %s ranks per %s over %d domain(s)/node"
               % (",".join(str(r) for r in args.ranks_per_numa),
@@ -793,61 +1141,96 @@ def main(argv=None):
 
     case_dir = resolve_case(args, workspace)
     print("case:      %s" % display_path(case_dir, workspace))
+    if args.stop_when_accurate and not has_stop_when_accurate(case_dir):
+        sys.exit("error: --stop-when-accurate needs the stopWhenAccurate "
+                 "entry in system/FOwallClockTimeStatistics, which this case "
+                 "does not have yet")
+    allrun = None
+    if os.path.isfile(os.path.join(case_dir, "Allrun")):
+        with open(os.path.join(case_dir, "Allrun")) as f:
+            allrun = allrun_with_launcher(f.read())
+    if allrun is None:
+        print("warning: the case's Allrun neither reads MPI_LAUNCHER nor "
+              "has the mpirun/OMPI_FLAGS lines of the upstream one; "
+              "MPI_LAUNCHER and OMPI_FLAGS from run.slurm will not reach it",
+              file=sys.stderr)
+    manifest = case_manifest.reference(workspace)
+    if manifest is None:
+        print("warning: the runs cannot be checked against %s yet; "
+              "postprocess.py tries again, and harvests them as Software "
+              "Track until it can" % CASE_WEB_URL, file=sys.stderr)
+    else:
+        print("reference: %s at %s (%s)"
+              % (CASE_BRANCH, manifest["case_ref"][:8],
+                 display_path(case_manifest.manifest_path(workspace),
+                              workspace)))
     print()
 
     use_plugin = (decompositionPlugin
-                  and args.decomposition == decompositionPlugin.NAME)
-    if use_plugin:
-        ok, msg = decompositionPlugin.check_method_available(
-            args.multilevel_method)
+                  and args.decomposition in decompositionPlugin.NAMES)
+    hierarchical = args.decomposition.startswith("hierarchical")
+    if not hierarchical:
+        ok, msg = check_method_available(
+            decompositionPlugin.METHODS[args.decomposition] if use_plugin
+            else args.decomposition)
         print("decomp:    %s" % msg)
         if ok is False:
             sys.exit("error: %s" % msg)
         print()
 
     extents = None
-    if args.decomposition == "optimal":
+    if args.decomposition == "hierarchical-optimal":
         extents = args.domain_aspect or domain_extents(case_dir)
         if extents is None:
-            sys.exit("error: --decomposition optimal needs the domain size; "
-                     "could not read system/blockMeshDict -- pass "
-                     "--domain-aspect X,Y,Z")
+            sys.exit("error: --decomposition hierarchical-optimal needs the "
+                     "domain size; could not read system/blockMeshDict -- "
+                     "pass --domain-aspect X,Y,Z")
         print("domain:    %g x %g x %g (interface-minimising decomposition)"
               % tuple(extents))
         print()
 
     prepared = []
     for mesh in args.mesh:
-        polymesh = prepare_mesh(mesh, meshes_dir)
+        polymesh = prepare_mesh(mesh, meshes_dir, args.polymesh)
 
         for spec in runs:
             ncores = spec["ncores"]
             plugin_spec = None
             if use_plugin:
                 plugin_spec = decompositionPlugin.spec_from_args(
-                    args, ncores, spec["nodes"])
-                # multiLevel replaces nHierarchical entirely; the triplet is
-                # still written so the dictionary stays valid if the method is
-                # switched back by hand.
-                triplet = hierarchical_for(ncores, args.start)
-            else:
-                triplet = (optimal_triplet(ncores, extents) if extents
-                           else hierarchical_for(ncores, args.start))
+                    args, ncores, spec["nodes"], node_tiers(node))
+            # scotch and multiLevel do not use nHierarchical; the triplet is
+            # still written so the dictionary stays valid if the method is
+            # switched back by hand.
+            triplet = (optimal_triplet(ncores, extents) if extents
+                       else hierarchical_for(ncores, args.start,
+                                             quiet=not hierarchical))
             run_dir = os.path.join(runs_dir, mesh, spec["dirname"])
-            print("[run]  %s / %d cores on %d node(s) -> hierarchical %s"
-                  % (mesh, ncores, spec["nodes"], tuple(triplet)))
+            print("[run]  %s / %d cores on %d node(s) -> %s%s"
+                  % (mesh, ncores, spec["nodes"], args.decomposition,
+                     " %s" % (tuple(triplet),) if hierarchical else ""))
             if plugin_spec:
                 print("       %s" % decompositionPlugin.describe(plugin_spec))
             if spec["ompiflags"]:
                 print("       placement %s" % spec["ompiflags"])
 
             copy_case(case_dir, run_dir)
+            if allrun is not None:
+                with open(os.path.join(run_dir, "Allrun"), "w") as f:
+                    f.write(allrun)
             link_polymesh(run_dir, polymesh)
             set_decomposition(run_dir, ncores, triplet)
+            # Set the method in either case: a --case may hold another one.
+            if hierarchical:
+                set_method(run_dir, "hierarchical")
+            elif args.decomposition == "scotch":
+                set_method(run_dir, "scotch")
             if plugin_spec:
                 decompositionPlugin.apply(run_dir, plugin_spec)
             if args.end_time:
                 set_end_time(run_dir, args.end_time)
+            if args.stop_when_accurate:
+                set_stop_when_accurate(run_dir)
             script = render_slurm(template_text, run_dir, mesh, ncores,
                                    triplet, args.jobname, spec["tpn"],
                                    spec["ompiflags"], spec["extra_sbatch"],
@@ -858,13 +1241,28 @@ def main(argv=None):
 
     print("prepared %d run(s)." % len(prepared))
 
-    if args.submit:
+    if fresh_template:
+        print("\nthe sbatch directives come from %s, just written from the "
+              "built-in default -- adapt them to your site and re-run to "
+              "re-render run.slurm." % template_path)
+    if fresh_node:
+        print("\nthe node description %s was just detected on %s -- check "
+              "that it describes the compute nodes (--probe-node writes a job "
+              "that rewrites it on one) and re-run."
+              % (node_path, node[topology.HOST_KEY]))
+    unreviewed = [name for name, fresh in (("the template", fresh_template),
+                                           ("the node description",
+                                            fresh_node)) if fresh]
+    if args.submit and not unreviewed:
         print("\nsubmitting:")
         for run_dir, script in prepared:
             print("  sbatch %s" % script)
             subprocess.run(["sbatch", os.path.basename(script)],
                            cwd=run_dir, check=True)
     else:
+        if args.submit:
+            print("not submitting: review %s first."
+                  % " and ".join(unreviewed))
         print("re-run with --submit to queue them, or submit manually:")
         for _, script in prepared:
             print("  (cd %s && sbatch run.slurm)" % os.path.dirname(script))

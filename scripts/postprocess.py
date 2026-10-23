@@ -67,8 +67,14 @@ import socket
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import (CASE_DEFINITION, MESH_CELLS, MESHES, add_shared_arguments,
-                    display_path, read_text, sanitize)
+from common import (CASE_BRANCH, CASE_DEFINITION, CASE_PATH,
+                    CASE_PROJECT_URL, CASE_WEB_URL, DECOMPOSITIONS,
+                    DEFAULT_DECOMPOSITION, MESH_CELLS, MESHES,
+                    add_shared_arguments, display_path, parse_run_dirname,
+                    read_text, sanitize)
+import case_manifest
+import topology
+from ohc_schema import NOMINAL_ITERATIONS
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -221,6 +227,19 @@ def parse_solver_log(path):
                 m = re.search(r"run for (\d+) steps", line)
                 if m:
                     out["requested_iterations"] = int(m.group(1))
+                continue
+            # The verdict of the case's wallClockTimeStatistics function
+            # object, printed when the solver ends.
+            m = re.match(r"\s*Number of measured time steps = (\d+)", line)
+            if m:
+                out["timed_steps"] = int(m.group(1))
+                continue
+            m = re.match(r"\s*Minimum number of measured time steps for "
+                         r"([0-9.]+)% error at 95% confidence level = (\d+)",
+                         line)
+            if m:
+                out["timing_error_percent"] = float(m.group(1))
+                out["timed_steps_required"] = int(m.group(2))
                 continue
 
             # Everything below is a banner field.  They are written once, at
@@ -473,7 +492,9 @@ def collect_run(run_dir, mesh, window):
         "run_date": banner.get("date_raw", "N/A"),
         "iterations_requested": requested,
         "iterations_completed": completed,
-        "is_partial": bool(requested and completed and completed < requested),
+        # Every run short of the challenge's iterations, also one set up
+        # shorter (--end-time, --stop-when-accurate).
+        "is_partial": bool(completed and completed < NOMINAL_ITERATIONS),
         "hosts": [h for h, _ in banner.get("hosts", [])],
         "ranks_per_host": banner.get("hosts", [[None, None]])[0][1]
                           if banner.get("hosts") else None,
@@ -481,6 +502,9 @@ def collect_run(run_dir, mesh, window):
         "wall_clock_per_iteration_median_s": (
             sorted(per_step)[len(per_step) // 2] if per_step else None),
         "wall_clock_samples": len(per_step),
+        "timed_steps": banner.get("timed_steps"),
+        "timed_steps_required": banner.get("timed_steps_required"),
+        "timing_error_percent": banner.get("timing_error_percent"),
     }
 
     if stats:
@@ -585,17 +609,19 @@ def add_parallel_efficiency(runs):
 def format_timestep(run):
     """Latest solver timestep as 'reached/requested', e.g. '1467/4000'.
 
-    A trailing '*' marks a run that has not reached the requested end time --
-    these numbers move while the queue is still working through the sweep.
+    A trailing '*' marks a partial run, short of the challenge's 4000
+    iterations: set up shorter, or still going while the queue works through
+    the sweep.
     """
     prov = run.get("provenance", {})
     done = prov.get("iterations_completed")
     total = prov.get("iterations_requested")
     if done is None:
         return "n/a"
+    star = "*" if prov.get("is_partial") else ""
     if not total:
-        return str(done)
-    return "%d/%d%s" % (done, total, "*" if prov.get("is_partial") else "")
+        return "%d%s" % (done, star)
+    return "%d/%d%s" % (done, total, star)
 
 
 def format_fvops_table(mesh, runs):
@@ -632,10 +658,41 @@ def format_fvops_table(mesh, runs):
     incomplete = any(r["provenance"].get("is_partial") for r in timed)
     lines.append("  (%.0fM cells; efficiency relative to %d cores%s)"
                  % (cells / 1e6, base,
-                    "; * = run still incomplete" if incomplete else ""))
+                    "; * = fewer than %d iterations" % NOMINAL_ITERATIONS
+                    if incomplete else ""))
     for run in untimed:
         lines.append("  %-13s no wall-clock samples, excluded from the table"
                      % run["name"])
+    lines.extend(timing_warnings(runs))
+    return lines
+
+
+def timing_warnings(runs):
+    """Lines for the runs whose timings the case's wallClockTimeStatistics
+    function object judges too short to be measured within its error.
+
+    It prints its verdict when the solver ends, so a run that is still going
+    or was killed has none.  With fvSolution.fixedIter, the Hardware Track
+    setup, every time step should take as long as the others, so the case
+    asks for that verdict to be taken seriously.
+    """
+    lines = []
+    for run in runs:
+        prov = run["provenance"]
+        steps, required = prov.get("timed_steps"), prov.get("timed_steps_required")
+        if steps is None or required is None:
+            done = prov.get("iterations_completed")
+            total = prov.get("iterations_requested")
+            if not (done and total and done < total):
+                lines.append("  ! %s: no wall-clock statistics in the solver "
+                             "log" % run["name"])
+            continue
+        if steps < required:
+            lines.append("  ! %s: %d timed step(s), fewer than the %d the "
+                         "wall-clock statistics need for a %g%% error at 95%% "
+                         "confidence -- raise endTime"
+                         % (run["name"], steps, required,
+                            prov.get("timing_error_percent") or 2))
     return lines
 
 
@@ -732,11 +789,221 @@ def yaml_load_flat(path):
         meta[key.strip()] = value
     return meta
 
-def write_metadata_template(path):
+# --------------------------------------------------------------------------- #
+# Hardware metadata the machine can tell
+# --------------------------------------------------------------------------- #
+
+def clean_cpu_name(name):
+    """'Intel(R) Xeon(R) Platinum 8368 CPU @ 2.40GHz' -> 'Intel Xeon Platinum
+    8368', 'AMD EPYC 7763 64-Core Processor' -> 'AMD EPYC 7763 64-Core'."""
+    name = re.sub(r"\((?:R|TM)\)", "", name, flags=re.I)
+    name = re.sub(r"\s+(?:CPU\s+)?@\s*[\d.]+\s*GHz\s*$", "", name)
+    name = re.sub(r"\s+(?:Processor|CPU)\s*$", "", name)
+    return " ".join(name.split())
+
+
+def split_cpu(name):
+    """(family, model, submodel) of a cleaned CPU name, or None."""
+    m = re.match(r"AMD EPYC (\w{4})", name)
+    if m:
+        return "AMD", "EPYC", m.group(1)
+    m = re.match(r"Intel Xeon (?:(?:Platinum|Gold|Silver|Bronze|Max) )?"
+                 r"[A-Za-z-]*?(\d{4})", name)
+    if m:
+        return "Intel", "Xeon", m.group(1)
+    return None
+
+
+def dataset_records():
+    """data/data.json of this checkout, or [] outside one."""
+    try:
+        with open(os.path.join(REPO, "data", "data.json")) as f:
+            records = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return records if isinstance(records, list) else records.get("records", [])
+
+
+def most_common(values):
+    values = [v for v in values if v not in (None, "", "N/A", "-", "Unknown")]
+    return max(set(values), key=values.count) if values else None
+
+
+def same_cpu(record, family, submodel):
+    return (record.get("CPU Family") == family
+            and str(record.get("CPU Submodel")).lower() == submodel.lower())
+
+
+def generation_digit(family, submodel):
+    """The digit of the model number that tells the generation: the last for
+    AMD EPYC, the second for Intel Xeon Scalable; None for anything else."""
+    if family == "AMD":
+        return submodel[-1:]
+    if family == "Intel" and len(submodel) == 4:
+        return submodel[1:2]
+    return None
+
+
+def cpu_generation(family, model, submodel, records):
+    """The generation of a CPU as data/data.json has it, and a note on where
+    it was found, or (None, None).
+
+    A CPU the dataset has no record of gets the generation of the CPUs that
+    share its generation digit.
+    """
+    known = most_common(r.get("CPU Generation") for r in records
+                        if same_cpu(r, family, submodel))
+    if known:
+        return known, "as data/data.json has it for this CPU"
+    digit = generation_digit(family, submodel)
+    if digit is None:
+        return None, None
+    alike = [r for r in records
+             if (r.get("CPU Family"), r.get("CPU Model")) == (family, model)
+             and generation_digit(family, str(r.get("CPU Submodel")).lower())
+             == digit]
+    gen = most_common(r.get("CPU Generation") for r in alike)
+    if gen is None:
+        return None, None
+    names = sorted({str(r.get("CPU Submodel")) for r in alike
+                    if r.get("CPU Generation") == gen})
+    return gen, ("as data/data.json has it for %s %s, the same generation "
+                 "digit" % (model, ", ".join(names)))
+
+
+def memory_size(gib):
+    """The installed memory in GB that a MemTotal of `gib` GiB stands for.
+
+    MemTotal sits a few per cent below the installed size, so it is rounded up
+    to the next 2^k or 1.5 * 2^k: the sizes a power-of-two number of DIMMs
+    per channel gives on 8-, 6-, 12- and 24-channel boards alike.
+    """
+    size = 1
+    while size < gib:
+        size *= 2
+    if size >= 4 and size * 3 // 4 >= gib:
+        size = size * 3 // 4
+    return size
+
+
+def file_system(path):
+    """The file system `path` lives on, from /proc/mounts, or None."""
+    path = os.path.realpath(path)
+    best = None
+    try:
+        with open("/proc/mounts") as f:
+            for line in f:
+                fields = line.split()
+                if len(fields) < 3:
+                    continue
+                mount = fields[1].replace("\\040", " ")
+                if (path == mount or path.startswith(mount.rstrip("/") + "/")) \
+                        and (best is None or len(mount) > len(best[0])):
+                    best = (mount, fields[2])
+    except OSError:
+        return None
+    return best[1] if best else None
+
+
+def hardware_guesses(workspace):
+    """What the hardware part of the metadata template can be filled with.
+
+    Returns (guesses, source, hint): {key: (value, note)} for the template, the
+    node the hardware facts were read on, and a hint when they are missing.
+    The facts come from the workspace's node-topology.yaml, read on a compute
+    node, and only without one from the machine this runs on -- the login
+    node, typically, which is not what ran the job.
+    """
+    node_path = os.path.join(workspace, topology.NODE_FILE)
+    hint = None
+    if os.path.isfile(node_path):
+        try:
+            node = topology.load(node_path)
+        except ValueError as exc:
+            return {}, None, str(exc)
+        source = "%s, as %s describes it" % (node.get(topology.HOST_KEY, "?"),
+                                             topology.NODE_FILE)
+        if not any(node.get(k) for k in topology.INFO_KEYS):
+            hint = ("%s has no hardware facts yet; re-run benchmark.py "
+                    "--probe-node on a compute node to record them"
+                    % topology.NODE_FILE)
+    else:
+        node, _ = topology.detect()
+        source = "%s, the machine this runs on" % node.get(topology.HOST_KEY)
+
+    records = dataset_records()
+    guesses = {}
+
+    def guess(key, value, note):
+        if value not in (None, ""):
+            guesses[key] = (value, note)
+
+    cpu = node.get("cpu_name") and clean_cpu_name(node["cpu_name"])
+    guess("cpu", cpu, "the CPU's model name")
+    split = cpu and split_cpu(cpu)
+    if split:
+        family, model, submodel = split
+        guess("cpu_family", family, "from the CPU's model name")
+        guess("cpu_model", model, "from the CPU's model name")
+        guess("cpu_submodel", submodel, "from the CPU's model name")
+        gen, how = cpu_generation(family, model, submodel, records)
+        guess("cpu_generation", gen, how)
+        same = [r for r in records if same_cpu(r, family, submodel)]
+        bandwidth = most_common(r.get("CPU Memory Bandwidth [GB/s]")
+                                for r in same)
+        guess("cpu_memory_bandwidth_gb_s",
+              bandwidth and "%s GB/s" % bandwidth,
+              "per socket, as data/data.json has it for this CPU")
+        tdps = []
+        for r in same:
+            try:
+                nodes = float(r["Number of Nodes"])
+                if float(r["Number of CPU Cores"]) / nodes \
+                        == node["cores_per_node"]:
+                    tdps.append(int(round(float(r["System TDP [W]"]) / nodes)))
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                pass
+        tdp = most_common(tdps)
+        guess("tdp_per_node_w", tdp,
+              "from %d dataset run(s) with this CPU and %d cores per node"
+              % (len(tdps), node["cores_per_node"]))
+    if node.get("memory_kb"):
+        gib = int(node["memory_kb"]) / 2.0 ** 20
+        guess("memory_capacity_per_node", "%dGB" % memory_size(gib),
+              "MemTotal %.1f GiB, rounded up to the next 2^k or 1.5 x 2^k GB"
+              % gib)
+    if node.get("llc_kb"):
+        per_socket = (int(node["llc_kb"]) * node["l3_per_node"]
+                      // node["sockets"] // 1024)
+        guess("last_level_cache", "%dMB" % per_socket,
+              "per socket, like data/data.json")
+    guess("network_interconnect", node.get("interconnect"), "from /sys/class")
+    # Unlike the rest, read here: the workspace is the same file system for
+    # the login node as for the compute nodes.
+    guess("storage_file_system", file_system(workspace),
+          "the file system of the workspace, read here")
+    return guesses, source, hint
+
+
+def write_metadata_template(path, guesses=None, source=None):
+    """Write the template, filling in `guesses` ({key: (value, note)}).
+
+    Each filled-in value gets its note on the line above -- not after it, where
+    the flat reader would take it for part of the value -- and the hardware
+    section says once which node they were read on.
+    """
+    guesses = guesses or {}
     lines = []
     for key, value in METADATA_TEMPLATE:
         if value is None:
             lines.append(key)
+            if key.startswith("# --- hardware") and guesses and source:
+                lines.append("# Values with a '-- check' note were filled in "
+                             "from %s." % source)
+        elif key in guesses:
+            value, note = guesses[key]
+            lines.append("# %s -- check" % note)
+            lines.append("%s: %s" % (key, yaml_scalar(value)))
         else:
             lines.append("%s: %s" % (key, yaml_scalar(value)))
     with open(path, "w") as f:
@@ -863,16 +1130,18 @@ def find_workspace_meta(workspace):
     return None
 
 
-def template_todo():
+def template_todo(guesses=()):
     """The fields of the metadata template that only the contributor can fill.
 
-    The FIXME strings, plus the node TDP: it ships as ``0`` because it is a
-    number and cannot say FIXME, and left at zero it silently empties the
-    energy columns of every run in the submission.
+    These are the fields still holding a FIXME placeholder once `guesses` are
+    filled in, plus the node TDP unless a guess was found for it.  The TDP is
+    a number, so the template writes it as ``0`` rather than FIXME; left at
+    zero, it empties the energy columns of every run in the submission.
     """
     todo = [key for key, value in METADATA_TEMPLATE
-            if value is not None and str(value).startswith("FIXME")]
-    if "tdp_per_node_w" not in todo:
+            if value is not None and str(value).startswith("FIXME")
+            and key not in guesses]
+    if "tdp_per_node_w" not in todo and "tdp_per_node_w" not in guesses:
         todo.append("tdp_per_node_w")
     return todo
 
@@ -893,6 +1162,135 @@ def repo_submissions_dir():
     return None
 
 
+# The decompositions the Hardware Track allows, and the optimization category
+# of the others as data/data.json names them.
+HARDWARE_TRACK, SOFTWARE_TRACK = "Hardware Track", "Software Track"
+HARDWARE_DECOMPOSITIONS = ("hierarchical-doubling", "hierarchical-optimal")
+DECOMPOSITION_CATEGORIES = {"scotch": "Decomposer",
+                            "multilevel-scotch": "Multilevel",
+                            "multilevel-metis": "Multilevel",
+                            "multilevel-kahip": "Multilevel"}
+
+
+def check_track(args, meta, workspace):
+    """The track, optimization category and case of this harvest, as printed.
+
+    The Hardware Track is the upstream case on develop, as the workspace's
+    case-manifest.json records it, with a hierarchical decomposition.  Runs
+    that deviate from either make the harvest a Software Track one, whatever
+    meta.yaml declares, and what differs from the manifest is printed.  So
+    does a case that cannot be checked, because develop cannot be reached to
+    write the manifest.  Edits of Allrun that keep its fvSolution variant are
+    printed as notes and do not count.  A declared Software Track stays: a
+    modified OpenFOAM does not show in the case.
+
+    The case is what the submission records of it: where it comes from, the
+    commit the runs were checked against and the digest of the case at that
+    commit, which is the same for commits that leave the case as it is.
+    """
+    runs_dir = os.path.join(workspace, "runs")
+    declared = meta.get("track", HARDWARE_TRACK)
+    category = meta.get("software_optimization_category", "Other")
+    reasons = []
+    if args.decomposition not in HARDWARE_DECOMPOSITIONS:
+        reasons.append("%s decomposition" % args.decomposition)
+        if category == "Other":
+            category = DECOMPOSITION_CATEGORIES.get(args.decomposition,
+                                                    category)
+
+    # The runs checked are the ones harvested: those with a solver log.
+    runs = []
+    for mesh in args.mesh:
+        mesh_dir = os.path.join(runs_dir, mesh)
+        if not os.path.isdir(mesh_dir):
+            continue
+        for entry in sorted(os.listdir(mesh_dir)):
+            run_dir = os.path.join(mesh_dir, entry)
+            if parse_run_dirname(entry, args.decomposition) is not None \
+                    and os.path.isdir(run_dir) \
+                    and find_solver_log(run_dir) is not None:
+                runs.append(("%s/%s" % (mesh, entry), run_dir))
+
+    # The directory name only tells the decomposition benchmark.py prepared;
+    # a run copy edited by hand, or made from a --case set to another method,
+    # holds a different one, which the manifest masks.
+    if args.decomposition in HARDWARE_DECOMPOSITIONS:
+        methods = {}
+        for name, run_dir in runs:
+            method = parse_case_definition(run_dir).get(
+                "decomposition_method", "").strip('"')
+            if method != "hierarchical":
+                methods.setdefault(method or "unknown", []).append(name)
+        for method, names in sorted(methods.items()):
+            reasons.append("%s decomposition in %d run(s)"
+                           % (method, len(names)))
+            print("method:    %s, not hierarchical -- %s"
+                  % (method, ", ".join(names)))
+
+    case = {"source": CASE_PROJECT_URL, "branch": CASE_BRANCH,
+            "path": CASE_PATH, "commit": None, "digest": None}
+    manifest = case_manifest.reference(workspace)
+    if manifest is None:
+        reasons.append("case not checked against %s" % CASE_BRANCH)
+        print("case:      not checked -- %s cannot be reached; run "
+              "postprocess.py again where it can" % CASE_WEB_URL)
+    else:
+        case["commit"] = manifest["case_ref"]
+        case["digest"] = case_manifest.case_digest(manifest)
+        # The runs of a sweep mostly share their changes, so each is printed
+        # once, with the runs it was found in.
+        changes = {}
+        for name, run_dir in runs:
+            for rel, kind, diff in case_manifest.compare(run_dir, manifest):
+                changes.setdefault((rel, kind, tuple(diff)), []).append(name)
+        ref = "%s at %s" % (CASE_BRANCH, manifest["case_ref"][:8])
+        counted = {k: v for k, v in changes.items() if k[1] != "noted"}
+        noted = {k: v for k, v in changes.items() if k[1] == "noted"}
+        if counted:
+            reasons.append("case differs from %s" % ref)
+            print("case:      differs from %s (%s) in %d file(s):"
+                  % (ref, display_path(case_manifest.manifest_path(workspace),
+                                       workspace),
+                     len({rel for rel, _, _ in counted})))
+        else:
+            print("case:      as %s" % ref)
+        for (rel, kind, diff), runs in sorted(counted.items()):
+            print("  %s %s -- %s" % (kind, rel, ", ".join(runs)))
+            for line in diff:
+                print("      %s" % line)
+        # Allrun is meant to be adapted to the site, so those differences are
+        # shown without counting for the track.
+        for (rel, kind, diff), runs in sorted(noted.items()):
+            print("  note: %s adapted to the environment, which does not "
+                  "change the track -- %s" % (rel, ", ".join(runs)))
+            for line in diff:
+                print("      %s" % line)
+
+    track = SOFTWARE_TRACK if reasons or declared == SOFTWARE_TRACK \
+        else HARDWARE_TRACK
+    print("track:     %s, %s%s%s\n"
+          % (track, category,
+             " -- %s" % "; ".join(reasons) if reasons else "",
+             " (meta.yaml: %s)" % declared if track != declared else ""))
+    return track, category, case
+
+
+def other_decompositions(mesh_dir, decomposition):
+    """[(name, run directories)] of the decompositions other than
+    `decomposition` that `mesh_dir` holds runs of."""
+    found = []
+    for name in DECOMPOSITIONS:
+        if name == decomposition:
+            continue
+        dirs = sorted((d for d in os.listdir(mesh_dir)
+                       if parse_run_dirname(d, name) is not None
+                       and os.path.isdir(os.path.join(mesh_dir, d))),
+                      key=lambda d: parse_run_dirname(d, name))
+        if dirs:
+            found.append((name, dirs))
+    return found
+
+
 def postprocess(args, workspace):
     runs_dir = os.path.join(workspace, "runs")
     if not os.path.isdir(runs_dir):
@@ -907,9 +1305,16 @@ def postprocess(args, workspace):
     meta_path = args.metadata or find_workspace_meta(workspace)
     if meta_path is None or not os.path.exists(meta_path):
         target = meta_path or os.path.join(workspace, META_WORKSPACE_NAMES[0])
-        write_metadata_template(target)
-        todo = template_todo()
+        guesses, source, hint = hardware_guesses(workspace)
+        write_metadata_template(target, guesses, source)
+        todo = template_todo(guesses)
         print("wrote a metadata template: %s" % target)
+        if guesses:
+            print("filled in %d hardware field(s), each marked in the file "
+                  "-- check them: %s" % (len(guesses),
+                                         ", ".join(sorted(guesses))))
+        if hint:
+            print("  ! %s" % hint)
         sys.exit(
             "error: this workspace has no metadata file, and the OpenFOAM "
             "logs cannot supply one.\n"
@@ -924,6 +1329,8 @@ def postprocess(args, workspace):
     if missing:
         print("  ! %s still has placeholder values: %s"
               % (meta_path, ", ".join(missing)))
+    meta["track"], meta["software_optimization_category"], case = \
+        check_track(args, meta, workspace)
 
     # Results are grouped per harvest and, inside it, per machine:
     #
@@ -946,7 +1353,11 @@ def postprocess(args, workspace):
     # results, not a second draft of the same one.  --run gives each its own
     # folder below the machine, with its own meta.yaml, so nothing overwrites
     # anything and each configuration is described where its numbers are.
-    run_name = sanitize(args.run) if args.run else ""
+    # A decomposition other than the default is such a configuration too, so
+    # it gets a run folder of its own unless --run names one.
+    run_name = sanitize(args.run) if args.run else (
+        "" if args.decomposition == DEFAULT_DECOMPOSITION
+        else args.decomposition)
     if run_name:
         outdir = os.path.join(outdir, run_name)
 
@@ -961,11 +1372,13 @@ def postprocess(args, workspace):
         if not os.path.isdir(mesh_dir):
             continue
 
-        # Numeric sort so the simulation list is a proper scaling sweep.
+        # Only the --decomposition's run directories, sorted by number so the
+        # simulation list is a proper scaling sweep.
         ncores_dirs = sorted(
             (d for d in os.listdir(mesh_dir)
-             if d.isdigit() and os.path.isdir(os.path.join(mesh_dir, d))),
-            key=int)
+             if parse_run_dirname(d, args.decomposition) is not None
+             and os.path.isdir(os.path.join(mesh_dir, d))),
+            key=lambda d: parse_run_dirname(d, args.decomposition))
 
         runs = []
         for entry in ncores_dirs:
@@ -977,7 +1390,16 @@ def postprocess(args, workspace):
             runs.append(apply_metadata(run, meta))
 
         if not runs:
-            print("[%s] no runs with solver output" % mesh)
+            print("[%s] no %s runs%s" % (mesh, args.decomposition,
+                                         " with solver output"
+                                         if ncores_dirs else ""))
+            # The likeliest reason is a sweep of another decomposition, which
+            # lives in suffixed run directories this harvest does not look at.
+            for name, dirs in other_decompositions(mesh_dir,
+                                                   args.decomposition):
+                print("       but %d %s run(s): %s -- harvest them with "
+                      "--decomposition %s" % (len(dirs), name,
+                                              ", ".join(dirs), name))
             continue
 
         # Efficiency is a property of the sweep, so it needs every run of the
@@ -997,18 +1419,23 @@ def postprocess(args, workspace):
             # The hardware behind the numbers belongs next to them: one
             # meta.yaml per folder, whichever meshes end up in it -- per
             # machine, or per run when --run split the machine further.
-            updates = {"legend_suffix": suffix, "machine": machine or "-"}
+            updates = {"legend_suffix": suffix, "machine": machine or "-",
+                       "track": meta["track"],
+                       "software_optimization_category":
+                           meta["software_optimization_category"]}
             if run_name:
                 updates["run"] = run_name
             meta_yaml = write_meta_yaml(
                 os.path.join(outdir, "meta.yaml"), meta_path, updates)
             print("  -> %s" % display_path(meta_yaml, workspace))
         if args.submission_format in ("json", "both"):
-            path = write_json_submission(outdir, mesh, meta, runs, machine)
+            path = write_json_submission(outdir, mesh, meta, runs, case,
+                                         machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         if args.submission_format in ("yaml", "both"):
-            path = write_submission(outdir, mesh, meta, runs, args, machine)
+            path = write_submission(outdir, mesh, meta, runs, case, args,
+                                    machine)
             written.append(path)
             print("  -> %s" % display_path(path, workspace))
         print("")
@@ -1079,14 +1506,15 @@ def submission_name(meta, mesh, machine, extension):
     return "_".join(parts) + extension
 
 
-def write_json_submission(outdir, mesh, meta, runs, machine=""):
+def write_json_submission(outdir, mesh, meta, runs, case, machine=""):
     """Emit one mesh as the flat JSON the OHC-DATA repository ingests.
 
     This is the same sweep as write_submission(), reduced to the columns of
     data/data.json: one object per simulation, with everything the runs share
     hoisted into `meta`.  The OHC-DATA workflow validates the file on the pull
     request and appends the records once it is merged; see that repository's
-    submissions/README.md for the schema.
+    submissions/README.md for the schema.  `case` names the case the runs
+    were checked against, as check_track() returns it.
     """
     name = submission_name(meta, mesh, machine, ".json")
 
@@ -1095,6 +1523,7 @@ def write_json_submission(outdir, mesh, meta, runs, machine=""):
         "schema": "ohc-submission/v1",
         "generated_by": "postprocess.py --format json",
         "generated_on": datetime.date.today().isoformat(),
+        "case": case,
         "meta": {
             "Contributor ID": str(meta.get("participant_id", "N/A")),
             "Contributor Affiliation": meta.get("affiliation", "N/A"),
@@ -1157,7 +1586,7 @@ def write_json_submission(outdir, mesh, meta, runs, machine=""):
     return path
 
 
-def write_submission(outdir, mesh, meta, runs, args, machine=""):
+def write_submission(outdir, mesh, meta, runs, case, args, machine=""):
     """Emit one YAML submission file covering every run of a single mesh."""
     _, label = MESHES[mesh]
 
@@ -1165,6 +1594,7 @@ def write_submission(outdir, mesh, meta, runs, args, machine=""):
         "schema": "ohc1-submission/v1",
         "generated_by": "postprocess.py",
         "generated_on": datetime.date.today().isoformat(),
+        "case": case,
         "meta": {
             "test_case": meta.get("test_case", "Test case 2a"),
             "track": meta.get("track", "Hardware Track"),
@@ -1290,6 +1720,13 @@ def build_parser():
                         "LMOD_SYSTEM_NAME, OHC_MACHINE) falling back to the "
                         "short hostname. Pass '-' to put the files straight "
                         "in the dated directory")
+    p.add_argument("--decomposition", choices=DECOMPOSITIONS,
+                   default=DEFAULT_DECOMPOSITION,
+                   help="which of benchmark.py's decompositions to harvest: "
+                        "its run directories (512, or 512-scotch for any but "
+                        "the default) make one sweep. A non-default one is "
+                        "written to a run folder of its name unless --run "
+                        "gives another (default: %s)" % DEFAULT_DECOMPOSITION)
     p.add_argument("--run", metavar="NAME",
                    help="run folder written inside the machine directory, for "
                         "harvesting the same machine more than once -- a "
@@ -1332,6 +1769,7 @@ def main(argv=None):
 
     workspace = os.path.abspath(args.workspace)
     print("workspace: %s" % workspace)
+    print("decomp:    %s" % args.decomposition)
     print("meshes:    %s\n" % ", ".join(args.mesh))
     return postprocess(args, workspace)
 
